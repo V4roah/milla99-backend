@@ -1232,3 +1232,233 @@ def test_nearby_requests_service_type_filter():
         assert distance <= 5000, f"La distancia debe ser menor a 5000 metros, se obtuvo {distance}"
 
     print("\n=== TEST DE FILTRADO POR TIPO DE SERVICIO COMPLETADO EXITOSAMENTE ===")
+
+
+def test_client_request_ratings():
+    """
+    Test case para verificar el sistema de calificaciones entre cliente y conductor.
+    Verifica:
+    1. Calificación del cliente al conductor
+    2. Calificación del conductor al cliente
+    3. Cálculo del promedio de calificaciones
+    4. Validación de estados para calificar
+    """
+    print("\n=== INICIANDO TEST DE CALIFICACIONES ===")
+
+    # 1. Crear y autenticar cliente
+    phone_number = "3011111117"
+    country_code = "+57"
+
+    print("\n1. Creando y autenticando cliente")
+    # Crear usuario
+    user_data = {
+        "full_name": "Usuario de Prueba",
+        "country_code": country_code,
+        "phone_number": phone_number
+    }
+    create_user_resp = client.post("/users/", json=user_data)
+    assert create_user_resp.status_code == 201
+    print("Usuario creado exitosamente")
+
+    # Enviar código de verificación
+    send_resp = client.post(f"/auth/verify/{country_code}/{phone_number}/send")
+    assert send_resp.status_code == 201
+    code = send_resp.json()["message"].split()[-1]
+
+    verify_resp = client.post(
+        f"/auth/verify/{country_code}/{phone_number}/code",
+        json={"code": code}
+    )
+    assert verify_resp.status_code == 200
+    token = verify_resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 2. Crear solicitud de cliente
+    print("\n2. Creando solicitud de cliente")
+    request_data = {
+        "fare_offered": 20000,
+        "pickup_description": "Suba Bogotá",
+        "destination_description": "Santa Rosita Engativa",
+        "pickup_lat": 4.718136,
+        "pickup_lng": -74.073170,
+        "destination_lat": 4.702468,
+        "destination_lng": -74.109776,
+        "type_service_id": 1,  # Car
+        "payment_method_id": 1  # Cash
+    }
+    create_resp = client.post(
+        "/client-request/", json=request_data, headers=headers)
+    assert create_resp.status_code == 201
+    client_request_id = create_resp.json()["id"]
+    print(f"Solicitud creada con ID: {client_request_id}")
+
+    # 3. Crear y aprobar conductor
+    print("\n3. Creando y aprobando conductor")
+    driver_phone = "3010000007"
+    driver_country_code = "+57"
+    driver_token, driver_id = create_and_approve_driver(
+        client, driver_phone, driver_country_code)
+    driver_headers = {"Authorization": f"Bearer {driver_token}"}
+
+    # 4. Asignar conductor a la solicitud
+    print("\n4. Asignando conductor a la solicitud")
+    assign_data = {
+        "id_client_request": client_request_id,
+        "id_driver": driver_id,
+        "fare_assigned": 25000
+    }
+    assign_resp = client.patch(
+        "/client-request/updateDriverAssigned",
+        json=assign_data,
+        headers=headers
+    )
+    assert assign_resp.status_code == 200
+    assert assign_resp.json()["success"] is True
+
+    # 5. Intentar calificar antes de que el viaje esté terminado (debe fallar)
+    print("\n5. Intentando calificar antes de terminar el viaje")
+    # Intentar calificar como cliente
+    client_rating_data = {
+        "id_client_request": client_request_id,
+        "driver_rating": 5
+    }
+    client_rating_resp = client.patch(
+        "/client-request/updateDriverRating",
+        json=client_rating_data,
+        headers=headers
+    )
+    assert client_rating_resp.status_code == 400
+    mensaje_error = "Solo se puede calificar cuando el viaje está PAID"
+    assert mensaje_error in client_rating_resp.json()["detail"]
+
+    # Intentar calificar como conductor
+    driver_rating_data = {
+        "id_client_request": client_request_id,
+        "client_rating": 4
+    }
+    driver_rating_resp = client.patch(
+        "/client-request/updateClientRating",
+        json=driver_rating_data,
+        headers=driver_headers
+    )
+    assert driver_rating_resp.status_code == 400
+    assert mensaje_error in driver_rating_resp.json()["detail"]
+
+    # 6. Completar el viaje
+    print("\n6. Completando el viaje")
+    # Cambiar estado a ON_THE_WAY
+    status_resp = client.patch(
+        "/client-request/updateStatusByDriver",
+        json={
+            "id_client_request": client_request_id,
+            "status": "ON_THE_WAY"
+        },
+        headers=driver_headers
+    )
+    assert status_resp.status_code == 200
+
+    # Cambiar estado a ARRIVED
+    status_resp = client.patch(
+        "/client-request/updateStatusByDriver",
+        json={
+            "id_client_request": client_request_id,
+            "status": "ARRIVED"
+        },
+        headers=driver_headers
+    )
+    assert status_resp.status_code == 200
+
+    # Cambiar estado a TRAVELLING
+    status_resp = client.patch(
+        "/client-request/updateStatusByDriver",
+        json={
+            "id_client_request": client_request_id,
+            "status": "TRAVELLING"
+        },
+        headers=driver_headers
+    )
+    assert status_resp.status_code == 200
+
+    # Cambiar estado a FINISHED
+    status_resp = client.patch(
+        "/client-request/updateStatusByDriver",
+        json={
+            "id_client_request": client_request_id,
+            "status": "FINISHED"
+        },
+        headers=driver_headers
+    )
+    assert status_resp.status_code == 200
+
+    # Cambiar estado a PAID
+    status_resp = client.patch(
+        "/client-request/updateStatusByDriver",
+        json={
+            "id_client_request": client_request_id,
+            "status": "PAID"
+        },
+        headers=driver_headers
+    )
+    assert status_resp.status_code == 200
+
+    # 7. Calificar el viaje
+    print("\n7. Calificando el viaje")
+    # Cliente califica al conductor
+    client_rating_data = {
+        "id_client_request": client_request_id,
+        "driver_rating": 5
+    }
+    client_rating_resp = client.patch(
+        "/client-request/updateDriverRating",
+        json=client_rating_data,
+        headers=headers
+    )
+    assert client_rating_resp.status_code == 200
+    assert client_rating_resp.json()["success"] is True
+
+    # Conductor califica al cliente
+    driver_rating_data = {
+        "id_client_request": client_request_id,
+        "client_rating": 4
+    }
+    driver_rating_resp = client.patch(
+        "/client-request/updateClientRating",
+        json=driver_rating_data,
+        headers=driver_headers
+    )
+    assert driver_rating_resp.status_code == 200
+    assert driver_rating_resp.json()["success"] is True
+
+    # 8. Verificar que no se puede calificar dos veces
+    print("\n8. Verificando que no se puede calificar dos veces")
+    # Intentar calificar de nuevo como cliente
+    duplicate_client_rating_resp = client.patch(
+        "/client-request/updateDriverRating",
+        json=client_rating_data,
+        headers=headers
+    )
+    assert duplicate_client_rating_resp.status_code == 400
+    mensaje_duplicado = "Ya existe una calificación para este viaje"
+    assert mensaje_duplicado in duplicate_client_rating_resp.json()["detail"]
+
+    # Intentar calificar de nuevo como conductor
+    duplicate_driver_rating_resp = client.patch(
+        "/client-request/updateClientRating",
+        json=driver_rating_data,
+        headers=driver_headers
+    )
+    assert duplicate_driver_rating_resp.status_code == 400
+    assert mensaje_duplicado in duplicate_driver_rating_resp.json()["detail"]
+
+    # 9. Verificar que las calificaciones se guardaron correctamente
+    print("\n9. Verificando calificaciones guardadas")
+    request_details = client.get(
+        f"/client-request/{client_request_id}",
+        headers=headers
+    )
+    assert request_details.status_code == 200
+    details = request_details.json()
+    assert details["client_rating"] == 4
+    assert details["driver_rating"] == 5
+
+    print("\n=== TEST DE CALIFICACIONES COMPLETADO EXITOSAMENTE ===")

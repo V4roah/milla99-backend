@@ -297,7 +297,9 @@ def get_client_request_detail_service(session: Session, client_request_id: UUID,
         "vehicle_info": vehicle_info,
         "review": cr.review,
         "payment_method": payment_method,
-        "type_service_id": cr.type_service_id
+        "type_service_id": cr.type_service_id,
+        "client_rating": cr.client_rating,
+        "driver_rating": cr.driver_rating
     }
 
     # Obtener el nombre del tipo de servicio
@@ -400,6 +402,7 @@ def update_client_rating_service(session: Session, id_client_request: UUID, clie
     2. La solicitud debe estar en estado PAID
     3. El usuario debe ser el conductor asignado a esta solicitud específica
     4. La calificación debe estar entre 1 y 5
+    5. No debe existir una calificación previa
 
     Args:
         session: Sesión de base de datos
@@ -412,7 +415,7 @@ def update_client_rating_service(session: Session, id_client_request: UUID, clie
 
     Raises:
         HTTPException(404): Si la solicitud no existe
-        HTTPException(400): Si la solicitud no está en estado PAID o la calificación está fuera de rango
+        HTTPException(400): Si la solicitud no está en estado PAID, la calificación está fuera de rango, o ya existe una calificación
         HTTPException(403): Si el usuario no es el conductor asignado a esta solicitud
     """
     # Validar rango de calificación
@@ -439,6 +442,13 @@ def update_client_rating_service(session: Session, id_client_request: UUID, clie
             detail="No tienes permiso para calificar esta solicitud. Solo el conductor asignado a esta solicitud puede calificar al cliente."
         )
 
+    # Validar que no exista una calificación previa
+    if client_request.client_rating is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Ya existe una calificación para este viaje"
+        )
+
     client_request.client_rating = client_rating
     client_request.updated_at = datetime.utcnow()
     session.commit()
@@ -454,6 +464,7 @@ def update_driver_rating_service(session: Session, id_client_request: UUID, driv
     2. La solicitud debe estar en estado PAID
     3. El usuario debe ser el cliente que creó esta solicitud específica
     4. La calificación debe estar entre 1 y 5
+    5. No debe existir una calificación previa
 
     Args:
         session: Sesión de base de datos
@@ -466,7 +477,7 @@ def update_driver_rating_service(session: Session, id_client_request: UUID, driv
 
     Raises:
         HTTPException(404): Si la solicitud no existe
-        HTTPException(400): Si la solicitud no está en estado PAID o la calificación está fuera de rango
+        HTTPException(400): Si la solicitud no está en estado PAID, la calificación está fuera de rango, o ya existe una calificación
         HTTPException(403): Si el usuario no es el cliente que creó esta solicitud
     """
     # Validar rango de calificación
@@ -491,6 +502,13 @@ def update_driver_rating_service(session: Session, id_client_request: UUID, driv
         raise HTTPException(
             status_code=403,
             detail="No tienes permiso para calificar esta solicitud. Solo el cliente que creó esta solicitud puede calificar al conductor."
+        )
+
+    # Validar que no exista una calificación previa
+    if client_request.driver_rating is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Ya existe una calificación para este viaje"
         )
 
     client_request.driver_rating = driver_rating
