@@ -70,6 +70,8 @@ def get_time_and_distance_service(origin_lat, origin_lng, destination_lat, desti
 
 
 def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session, wkb_to_coords, type_service_ids=None):
+    print(
+        f"\n[DEBUG] Calculando distancias para conductor en lat={driver_lat}, lng={driver_lng}")
     driver_point = func.ST_GeomFromText(
         f'POINT({driver_lng} {driver_lat})', 4326)
 
@@ -79,7 +81,10 @@ def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session,
 
     time_limit = datetime.now(timezone.utc) - \
         timedelta(minutes=timeout_minutes)
-    distance_limit = 5000
+    distance_limit = 4000
+    print(
+        f"[DEBUG] Límite de distancia configurado: {distance_limit} metros (1.35km)")
+
     base_query = (
         session.query(
             ClientRequest,
@@ -105,11 +110,25 @@ def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session,
     if type_service_ids:
         base_query = base_query.filter(
             ClientRequest.type_service_id.in_(type_service_ids))
+
+    # Agregar print de la consulta SQL
+    print(f"[DEBUG] Query SQL: {str(base_query)}")
+
     base_query = base_query.having(text(f"distance < {distance_limit}"))
     results = []
     query_results = base_query.all()
+
+    print(f"\n[DEBUG] Resultados encontrados: {len(query_results)}")
     for row in query_results:
         cr, full_name, country_code, phone_number, type_service_name, distance, time_difference = row
+        pickup_coords = wkb_to_coords(cr.pickup_position)
+        print(f"[DEBUG] Solicitud {cr.id}:")
+        print(
+            f"  - Coordenadas: lat={pickup_coords['lat']}, lng={pickup_coords['lng']}")
+        print(
+            f"  - Distancia calculada: {float(distance) if distance is not None else None} metros")
+        print(
+            f"  - Diferencia de latitud con conductor: {abs(float(pickup_coords['lat']) - driver_lat)} grados")
         average_rating = get_average_rating(
             session, "passenger", cr.id_client) if cr.id_client else 0.0
         result = {
@@ -120,7 +139,7 @@ def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session,
             "destination_description": cr.destination_description,
             "status": cr.status,
             "updated_at": cr.updated_at.isoformat(),
-            "pickup_position": wkb_to_coords(cr.pickup_position),
+            "pickup_position": pickup_coords,
             "destination_position": wkb_to_coords(cr.destination_position),
             "distance": float(distance) if distance is not None else None,
             "time_difference": int(time_difference) if time_difference is not None else None,
