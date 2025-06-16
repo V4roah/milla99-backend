@@ -857,14 +857,15 @@ def update_status_by_driver_service(session: Session, id_client_request: int, st
             status_code=500, detail=f"Error al actualizar el estado: {str(e)}")
 
 
-def client_canceled_service(session: Session, id_client_request: int, user_id: int):
+def client_canceled_service(session: Session, id_client_request: UUID, user_id: UUID):
     """
-    Permite al cliente (dueño de la solicitud) cancelar su solicitud (cambiando su estado a CANCELLED)
+    Permite al cliente (dueño de la solicitud) cancelar su solicitud (cambiando su estado a CANCELLED) 
     únicamente si la solicitud está en CREATED, ACCEPTED, ON_THE_WAY o ARRIVED.
-    """
-    # Inicializar multa como None
-    multa = None
 
+    - En ON_THE_WAY: Aplica penalización monetaria (fine_one)
+    - En ARRIVED: Aplica penalización monetaria (fine_two)
+    - En CREATED/ACCEPTED: Sin penalización
+    """
     # Validar rol del cliente (que sea CLIENT y esté aprobado)
     user_role = session.query(UserHasRole).filter(
         UserHasRole.id_user == user_id,
@@ -875,70 +876,66 @@ def client_canceled_service(session: Session, id_client_request: int, user_id: i
         raise HTTPException(
             status_code=403, detail="Solo clientes aprobados pueden cancelar su solicitud.")
 
-    # Obtener la solicitud actual (por su id_client_request)
+    # Obtener la solicitud actual
     client_request = session.query(ClientRequest).filter(
         ClientRequest.id == id_client_request).first()
     if not client_request:
         raise HTTPException(status_code=404, detail="Solicitud no encontrada.")
 
-    # Validar que el cliente sea el dueño de la solicitud (es decir, que client_request.id_client == user_id)
-    if (client_request.id_client != user_id):
+    # Validar que el cliente sea el dueño de la solicitud
+    if client_request.id_client != user_id:
         raise HTTPException(
             status_code=403, detail="Solo el cliente dueño de la solicitud puede cancelarla.")
 
-    # Validar que la solicitud esté en CREATED, ACCEPTED, ON_THE_WAY o ARRIVED (es decir, que su estado actual esté en CANCELLABLE_STATES)
-    if (client_request.status not in ClientRequestStateMachine.CANCELLABLE_STATES):
+    # Validar que la solicitud esté en un estado que permita cancelación
+    if client_request.status not in ClientRequestStateMachine.CANCELLABLE_STATES:
         raise HTTPException(
-            status_code=400, detail="La solicitud no se puede cancelar (solo se permite cancelar si está en CREATED, ACCEPTED o ON_THE_WAY).")
+            status_code=400,
+            detail="La solicitud no se puede cancelar (solo se permite cancelar si está en CREATED, ACCEPTED, ON_THE_WAY o ARRIVED)."
+        )
 
-    # valida si el estado del client_request esta en on the way
-    if (client_request.status == StatusEnum.ON_THE_WAY):
-        # Asume que la configuración está en la fila con ID 1
-        config = session.query(ProjectSettings).get(1)
-        if not config:
-            raise ValueError(
-                "No se encontró la configuración del proyecto con ID 1")
-        multa = Decimal(config.fine_one)
+    # Obtener configuración del proyecto para las penalizaciones
+    config = session.query(ProjectSettings).get(1)
+    if not config:
+        raise ValueError(
+            "No se encontró la configuración del proyecto con ID 1")
+
+    # Aplicar penalización según el estado
+    if client_request.status == StatusEnum.ON_THE_WAY:
         penality = PenalityUser(
             id_user=client_request.id_client,
             id_client_request=client_request.id,
             id_driver_assigned=client_request.id_driver_assigned,
-            amount=multa,
+            amount=float(config.fine_one),
             status=statusEnum.PENDING,
         )
         session.add(penality)
-
-    # valida si el estado del client_request esta en arrived
-    if (client_request.status == StatusEnum.ARRIVED):
-        config = session.query(ProjectSettings).get(1)
-        if not config:
-            raise ValueError(
-                "No se encontró la configuración del proyecto con ID 1")
-        multa = Decimal(config.fine_two)
+    elif client_request.status == StatusEnum.ARRIVED:
         penality = PenalityUser(
             id_user=client_request.id_client,
             id_client_request=client_request.id,
             id_driver_assigned=client_request.id_driver_assigned,
-            amount=multa,
+            amount=float(config.fine_two),
             status=statusEnum.PENDING,
         )
         session.add(penality)
 
-    # (Forzar) Actualizar el estado a CANCELLED (sin validar transición, ya que se verifica que el estado actual esté en CANCELLABLE_STATES)
+    # Actualizar estado a CANCELLED
     client_request.status = StatusEnum.CANCELLED
     client_request.updated_at = datetime.utcnow()
     session.commit()
 
-    # si se generó una multa se le informa al usuario que se pagará una multa en el próximo servicio que tome
-    if multa is not None:
+    # Mensaje según si hubo penalización
+    if client_request.status in [StatusEnum.ON_THE_WAY, StatusEnum.ARRIVED]:
+        amount = float(config.fine_one) if client_request.status == StatusEnum.ON_THE_WAY else float(
+            config.fine_two)
         return {
             "success": True,
-            "message": f"Solicitud cancelada. Se aplicará una multa de {multa} pesos en su próximo servicio."
+            "message": f"Solicitud cancelada. Se aplicará una multa de {amount} pesos en su próximo servicio."
         }
-
     return {
         "success": True,
-        "message": "Solicitud cancelada exitosamente."
+        "message": "Solicitud cancelada correctamente."
     }
 
 
@@ -1038,8 +1035,16 @@ def update_review_service(session: Session, id_client_request: UUID, review: str
 
 def driver_canceled_service(session: Session, id_client_request: UUID, user_id: UUID, reason: str | None = None):
     """
-    Permite al conductor cancelar una solicitud de viaje. El conductor solo puede cancelar solicitudes que estén en estado ARRIVED.
-    Esto se usa típicamente cuando el cliente no aparece después de que el conductor ha llegado al punto de recogida.
+    Permite al conductor cancelar una solicitud de viaje. El conductor solo puede cancelar solicitudes que estén en estado 
+    ACCEPTED, ON_THE_WAY o ARRIVED. 
+
+    - En estados ACCEPTED y ON_THE_WAY:
+        - Registra la cancelación
+        - Verifica límites diarios (cancel_max_days) y semanales (cancel_max_weeks)
+        - Aplica suspensión si excede límites
+    - En estado ARRIVED:
+        - Solo registra la cancelación
+        - No aplica suspensión ni verifica límites
 
     Args:
         session: Sesión de base de datos
@@ -1053,7 +1058,7 @@ def driver_canceled_service(session: Session, id_client_request: UUID, user_id: 
     Raises:
         HTTPException(404): Si la solicitud no se encuentra
         HTTPException(403): Si el usuario no es el conductor asignado
-        HTTPException(400): Si la solicitud no está en estado ARRIVED
+        HTTPException(400): Si la solicitud no está en estado permitido
     """
     # Obtener la solicitud y validar que existe
     client_request = session.query(ClientRequest).filter(
@@ -1073,94 +1078,62 @@ def driver_canceled_service(session: Session, id_client_request: UUID, user_id: 
             detail="No tienes permiso para cancelar esta solicitud."
         )
 
-    validator = 0
-    penalty_amount = None  # Variable para controlar si se aplica penalización
-
-    # Validar que la solicitud está en estado ARRIVED o ON_THE_WAY
-    if client_request.status == StatusEnum.ACCEPTED or client_request.status == StatusEnum.ON_THE_WAY or client_request.status == StatusEnum.ARRIVED:
-        config = session.query(ProjectSettings).get(1)
-        if not config:
-            raise ValueError(
-                "No se encontró la configuración del proyecto con ID 1")
-
-        day = Decimal(config.cancel_max_days)
-        week = Decimal(config.cancel_max_weeks)
-        suspension = Decimal(config.day_suspension)
-
-        delete_old_cancellations(session, user_id)
-        validator = 1
-        record_driver_cancellation(session, user_id, id_client_request)
-        cancel_day_count = get_daily_cancellation_count(session, user_id)
-        cancel_week_count = get_weekly_cancellation_count(session, user_id)
-
-        # Lógica para aplicar penalización según el estado
-        if client_request.status == StatusEnum.ON_THE_WAY:
-            # Multa por cancelar en ON_THE_WAY
-            penalty_amount = Decimal(config.fine_one)
-            penality = PenalityUser(
-                id_user=client_request.id_client,
-                id_client_request=client_request.id,
-                id_driver_assigned=client_request.id_driver_assigned,
-                amount=penalty_amount,
-                status=statusEnum.PENDING,
-            )
-            session.add(penality)
-        elif client_request.status == StatusEnum.ARRIVED:
-            # Multa por cancelar en ARRIVED
-            penalty_amount = Decimal(config.fine_two)
-            penality = PenalityUser(
-                id_user=client_request.id_client,
-                id_client_request=client_request.id,
-                id_driver_assigned=client_request.id_driver_assigned,
-                amount=penalty_amount,
-                status=statusEnum.PENDING,
-            )
-            session.add(penality)
-
-        if cancel_day_count >= day or cancel_week_count >= week:
-            validator = 2
-            driver = session.query(UserHasRole).filter(
-                UserHasRole.id_user == user_id).first()
-            driver.suspension = True
-            driver.status = RoleStatus.PENDING
-            session.commit()
-
-    # Validación simplificada de estados usando lista
+    # Validar que la solicitud está en estado permitido
     if client_request.status not in [StatusEnum.ARRIVED, StatusEnum.ACCEPTED, StatusEnum.ON_THE_WAY]:
         raise HTTPException(
             status_code=400,
             detail="Esta solicitud de viaje solo puede ser cancelada por el conductor cuando está en estado ARRIVED, ACCEPTED u ON_THE_WAY."
         )
 
-    client_request.status = StatusEnum.CANCELLED
-    client_request.updated_at = datetime.now(timezone.utc)
-    session.commit()
+    # Obtener configuración del proyecto
+    config = session.query(ProjectSettings).get(1)
+    if not config:
+        raise ValueError(
+            "No se encontró la configuración del proyecto con ID 1")
 
-    # Mensajes mejorados que incluyen información de la penalización
-    if validator == 0:
+    # Registrar la cancelación
+    record_driver_cancellation(session, user_id, id_client_request)
+
+    # Solo verificar límites y aplicar suspensión si está en ACCEPTED u ON_THE_WAY
+    if client_request.status in [StatusEnum.ACCEPTED, StatusEnum.ON_THE_WAY]:
+        # Eliminar cancelaciones antiguas y obtener conteos actuales
+        delete_old_cancellations(session, user_id)
+        cancel_day_count = get_daily_cancellation_count(session, user_id)
+        cancel_week_count = get_weekly_cancellation_count(session, user_id)
+
+        # Verificar si se debe aplicar suspensión
+        if cancel_day_count >= config.cancel_max_days or cancel_week_count >= config.cancel_max_weeks:
+            driver = session.query(UserHasRole).filter(
+                UserHasRole.id_user == user_id,
+                UserHasRole.id_rol == "DRIVER"
+            ).first()
+            if driver:
+                driver.suspension = True
+                driver.status = RoleStatus.PENDING
+                session.commit()
+
+            return {
+                "success": True,
+                "message": f"Solicitud de viaje cancelada exitosamente por el conductor. El conductor ha sido suspendido por {config.day_suspension} días al exceder el límite de cancelaciones.",
+                "daily_cancellation_count": cancel_day_count,
+                "weekly_cancellation_count": cancel_week_count
+            }
+        else:
+            return {
+                "success": True,
+                "message": "Solicitud de viaje cancelada exitosamente por el conductor. Se ha registrado la cancelación.",
+                "daily_cancellation_count": cancel_day_count,
+                "weekly_cancellation_count": cancel_week_count
+            }
+    else:  # Estado ARRIVED
+        # Actualizar estado a CANCELLED
+        client_request.status = StatusEnum.CANCELLED
+        client_request.updated_at = datetime.utcnow()
+        session.commit()
+
         return {
             "success": True,
             "message": "Solicitud de viaje cancelada exitosamente por el conductor."
-        }
-    elif validator == 1:
-        message = "Solicitud de viaje cancelada exitosamente por el conductor. Se ha registrado la cancelación."
-        if penalty_amount is not None:
-            message += f" Se aplicará una multa de {penalty_amount} pesos en su próximo servicio."
-        return {
-            "success": True,
-            "message": message,
-            "daily_cancellation_count": cancel_day_count,
-            "weekly_cancellation_count": cancel_week_count
-        }
-    else:
-        message = f"Solicitud de viaje cancelada exitosamente por el conductor. El conductor ha sido suspendido por {suspension} días al exceder el límite de cancelaciones."
-        if penalty_amount is not None:
-            message += f" Se aplicará una multa de {penalty_amount} pesos en su próximo servicio."
-        return {
-            "success": True,
-            "message": message,
-            "daily_cancellation_count": cancel_day_count,
-            "weekly_cancellation_count": cancel_week_count
         }
 
 

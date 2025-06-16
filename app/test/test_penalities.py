@@ -4,206 +4,264 @@ from app.test.test_drivers import create_and_approve_driver
 from app.models.client_request import StatusEnum
 from app.models.penality_user import statusEnum, PenalityUser
 from app.models.project_settings import ProjectSettings
+from app.models.driver_cancellation import DriverCancellation
+from app.models.user_has_roles import UserHasRole, RoleStatus
 from decimal import Decimal
 from uuid import UUID
 import pytest
 from sqlmodel import Session
+from uuid import uuid4
+from datetime import datetime, timezone
+from app.services.client_requests_service import client_canceled_service, driver_canceled_service
+from app.models.user import User
+from geoalchemy2.shape import from_shape
+from shapely.geometry import Point
 
 client = TestClient(app)
 
 
-def test_driver_cancellation_penalty_on_the_way(session: Session):
-    """
-    Test case for driver cancellation penalty when driver cancels in ON_THE_WAY state.
-    Should apply fine_one (1000 pesos) penalty.
-    """
-    # Datos del cliente
-    phone_number = "3004444456"
-    country_code = "+57"
-
-    # Autenticar cliente
-    send_resp = client.post(f"/auth/verify/{country_code}/{phone_number}/send")
-    assert send_resp.status_code == 201
-    code = send_resp.json()["message"].split()[-1]
-
-    verify_resp = client.post(
-        f"/auth/verify/{country_code}/{phone_number}/code",
-        json={"code": code}
+@pytest.fixture
+def client_user(session):
+    """Fixture para crear un usuario cliente"""
+    user = User(
+        id=uuid4(),
+        full_name="Test Client",
+        email="client@test.com",
+        phone_number="3004444456",
+        country_code="+57"
     )
-    assert verify_resp.status_code == 200
-    token = verify_resp.json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
-
-    # Crear solicitud de cliente
-    request_data = {
-        "fare_offered": 20000,
-        "pickup_description": "Suba Bogotá",
-        "destination_description": "Santa Rosita Engativa",
-        "pickup_lat": 4.718136,
-        "pickup_lng": -74.073170,
-        "destination_lat": 4.702468,
-        "destination_lng": -74.109776,
-        "type_service_id": 1,  # Car
-        "payment_method_id": 1  # Cash
-    }
-    create_resp = client.post(
-        "/client-request/", json=request_data, headers=headers)
-    assert create_resp.status_code == 201
-    client_request_id = UUID(create_resp.json()["id"])  # Convertir a UUID
-
-    # Crear y aprobar conductor
-    driver_phone = "3010000005"
-    driver_country_code = "+57"
-    driver_token, driver_id = create_and_approve_driver(
-        client, driver_phone, driver_country_code)
-    driver_id = UUID(driver_id)  # Convertir a UUID
-    driver_headers = {"Authorization": f"Bearer {driver_token}"}
-
-    # Asignar el conductor a la solicitud
-    assign_data = {
-        # Convertir a string para la API
-        "id_client_request": str(client_request_id),
-        "id_driver": str(driver_id),  # Convertir a string para la API
-        "fare_assigned": 25000
-    }
-    assign_resp = client.patch(
-        "/client-request/updateDriverAssigned", json=assign_data, headers=headers)
-    assert assign_resp.status_code == 200
-    assert assign_resp.json()["success"] is True
-
-    # Cambiar el estado a ON_THE_WAY
-    status_data = {
-        # Convertir a string para la API
-        "id_client_request": str(client_request_id),
-        "status": "ON_THE_WAY"
-    }
-    status_resp = client.patch(
-        "/client-request/updateStatusByDriver", json=status_data, headers=driver_headers)
-    assert status_resp.status_code == 200
-    assert status_resp.json()["success"] is True
-
-    # Driver cancels the request
-    cancel_data = {
-        # Convertir a string para la API
-        "id_client_request": str(client_request_id),
-        "reason": "Test cancellation in ON_THE_WAY state"
-    }
-    cancel_resp = client.patch(
-        "/client-request/driver-canceled", json=cancel_data, headers=driver_headers)
-    assert cancel_resp.status_code == 200
-
-    # Verify the penalty was created with correct amount (1000 pesos)
-    penalty = session.query(PenalityUser).filter(
-        PenalityUser.id_client_request == client_request_id,  # Ya es UUID
-        PenalityUser.id_driver_assigned == driver_id  # Ya es UUID
-    ).first()
-
-    assert penalty is not None, "No se creó la penalización"
-    assert penalty.amount == 1000, f"El monto de la penalización es {penalty.amount}, se esperaba 1000"
-    assert penalty.status == "PENDING", f"El estado de la penalización es {penalty.status}, se esperaba PENDING"
+    session.add(user)
+    session.commit()
+    return user
 
 
-def test_driver_cancellation_penalty_arrived(session: Session):
-    """
-    Test case for driver cancellation penalty when driver cancels in ARRIVED state.
-    Should apply fine_two (2000 pesos) penalty.
-    """
-    # Datos del cliente
-    phone_number = "3004444457"
-    country_code = "+57"
-
-    # Autenticar cliente
-    send_resp = client.post(f"/auth/verify/{country_code}/{phone_number}/send")
-    assert send_resp.status_code == 201
-    code = send_resp.json()["message"].split()[-1]
-
-    verify_resp = client.post(
-        f"/auth/verify/{country_code}/{phone_number}/code",
-        json={"code": code}
+@pytest.fixture
+def driver_user(session):
+    """Fixture para crear un usuario conductor"""
+    user = User(
+        id=uuid4(),
+        full_name="Test Driver",
+        email="driver@test.com",
+        phone_number="3010000005",
+        country_code="+57"
     )
-    assert verify_resp.status_code == 200
-    token = verify_resp.json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
+    session.add(user)
 
-    # Crear solicitud de cliente
-    request_data = {
-        "fare_offered": 20000,
-        "pickup_description": "Suba Bogotá",
-        "destination_description": "Santa Rosita Engativa",
-        "pickup_lat": 4.718136,
-        "pickup_lng": -74.073170,
-        "destination_lat": 4.702468,
-        "destination_lng": -74.109776,
-        "type_service_id": 1,  # Car
-        "payment_method_id": 1  # Cash
-    }
-    create_resp = client.post(
-        "/client-request/", json=request_data, headers=headers)
-    assert create_resp.status_code == 201
-    client_request_id = UUID(create_resp.json()["id"])  # Convertir a UUID
-    # Guardar el ID del cliente
-    client_id = UUID(create_resp.json()["id_client"])
+    role = UserHasRole(
+        id_user=user.id,
+        id_rol="DRIVER",
+        status=RoleStatus.APPROVED
+    )
+    session.add(role)
+    session.commit()
+    return user
 
-    # Crear y aprobar conductor
-    driver_phone = "3010000006"
-    driver_country_code = "+57"
-    driver_token, driver_id = create_and_approve_driver(
-        client, driver_phone, driver_country_code)
-    driver_id = UUID(driver_id)  # Convertir a UUID
-    driver_headers = {"Authorization": f"Bearer {driver_token}"}
 
-    # Asignar el conductor a la solicitud
-    assign_data = {
-        # Convertir a string para la API
-        "id_client_request": str(client_request_id),
-        "id_driver": str(driver_id),  # Convertir a string para la API
-        "fare_assigned": 25000
-    }
-    assign_resp = client.patch(
-        "/client-request/updateDriverAssigned", json=assign_data, headers=headers)
-    assert assign_resp.status_code == 200
-    assert assign_resp.json()["success"] is True
+def create_test_request(session, client_id, status, driver_id=None):
+    """Función auxiliar para crear una solicitud de prueba"""
+    from app.models.client_request import ClientRequest
+    from geoalchemy2.shape import from_shape
+    from shapely.geometry import Point
+    from uuid import uuid4
 
-    # Cambiar el estado a ON_THE_WAY
-    status_data_ontheway = {
-        # Convertir a string para la API
-        "id_client_request": str(client_request_id),
-        "status": "ON_THE_WAY"
-    }
-    status_resp_ontheway = client.patch(
-        "/client-request/updateStatusByDriver", json=status_data_ontheway, headers=driver_headers)
-    assert status_resp_ontheway.status_code == 200
-    assert status_resp_ontheway.json()["success"] is True
+    # Crear puntos de posición usando geoalchemy2
+    pickup_point = from_shape(Point(-74.073170, 4.718136), srid=4326)
+    destination_point = from_shape(Point(-74.109776, 4.702468), srid=4326)
 
-    # Cambiar el estado a ARRIVED
-    status_data_arrived = {
-        # Convertir a string para la API
-        "id_client_request": str(client_request_id),
-        "status": "ARRIVED"
-    }
-    status_resp_arrived = client.patch(
-        "/client-request/updateStatusByDriver", json=status_data_arrived, headers=driver_headers)
-    assert status_resp_arrived.status_code == 200
-    assert status_resp_arrived.json()["success"] is True
+    request = ClientRequest(
+        id=uuid4(),
+        id_client=client_id,
+        id_driver_assigned=driver_id,
+        fare_offered=20000,
+        fare_assigned=25000 if driver_id else None,
+        pickup_description="Test Pickup",
+        destination_description="Test Destination",
+        pickup_position=pickup_point,
+        destination_position=destination_point,
+        type_service_id=1,
+        payment_method_id=1,
+        status=status,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc)
+    )
+    session.add(request)
+    session.commit()
+    session.refresh(request)
+    return request
 
-    # Driver cancels the request
-    cancel_data = {
-        # Convertir a string para la API
-        "id_client_request": str(client_request_id),
-        "reason": "Test cancellation in ARRIVED state"
-    }
-    cancel_resp = client.patch(
-        "/client-request/driver-canceled", json=cancel_data, headers=driver_headers)
-    assert cancel_resp.status_code == 200
 
-    # Verify the penalty was created with correct amount (2000 pesos)
-    penalty = session.query(PenalityUser).filter(
-        PenalityUser.id_client_request == client_request_id,  # Ya es UUID
-        PenalityUser.id_driver_assigned == driver_id  # Ya es UUID
+def test_driver_cancellation_suspension_on_the_way(session, client_user, driver_user):
+    """
+    Caso de prueba para cancelación del conductor en estado ON_THE_WAY.
+    Verifica:
+    1. Registro de cancelación
+    2. Conteo de cancelaciones diarias/semanales
+    3. Aplicación de suspensión al exceder límites
+    4. Estado del conductor después de la suspensión
+    """
+    # Obtener configuración existente
+    config = session.query(ProjectSettings).first()
+    assert config is not None, "No se encontró la configuración del proyecto"
+    assert config.cancel_max_days == 3, "Límite diario incorrecto"
+    assert config.cancel_max_weeks == 10, "Límite semanal incorrecto"
+    assert config.day_suspension == 7, "Días de suspensión incorrectos"
+
+    # Verificar estado inicial del conductor
+    driver_role = session.query(UserHasRole).filter(
+        UserHasRole.id_user == driver_user.id,
+        UserHasRole.id_rol == "DRIVER"
     ).first()
+    assert driver_role is not None, "No se encontró el rol del conductor"
+    assert driver_role.suspension is False, "El conductor no debería estar suspendido inicialmente"
+    assert driver_role.status == RoleStatus.APPROVED, "El conductor debería estar aprobado inicialmente"
 
-    assert penalty is not None, "No se creó la penalización"
-    assert penalty.amount == Decimal(
-        '2000'), f"El monto de la penalización es {penalty.amount}, se esperaba 2000"
-    assert penalty.status == statusEnum.PENDING, f"El estado de la penalización es {penalty.status}, se esperaba PENDING"
-    assert penalty.id_user == client_id, f"El ID del usuario en la penalización es {penalty.id_user}, se esperaba {client_id}"
+    # Primera cancelación (no debería suspender)
+    client_request_1 = create_test_request(
+        session, client_user.id, StatusEnum.ON_THE_WAY, driver_user.id)
+    result_1 = driver_canceled_service(
+        session, client_request_1.id, driver_user.id, "Primera cancelación")
+    assert result_1["success"] is True
+    assert "registrado" in result_1["message"]
+    assert result_1["daily_cancellation_count"] == 1
+    assert result_1["weekly_cancellation_count"] == 1
+
+    # Verificar que no se suspendió después de la primera cancelación
+    driver_role = session.query(UserHasRole).filter(
+        UserHasRole.id_user == driver_user.id,
+        UserHasRole.id_rol == "DRIVER"
+    ).first()
+    assert driver_role.suspension is False, "No debería estar suspendido después de una cancelación"
+    assert driver_role.status == RoleStatus.APPROVED, "Debería mantener estado APPROVED"
+
+    # Segunda cancelación (no debería suspender)
+    client_request_2 = create_test_request(
+        session, client_user.id, StatusEnum.ON_THE_WAY, driver_user.id)
+    result_2 = driver_canceled_service(
+        session, client_request_2.id, driver_user.id, "Segunda cancelación")
+    assert result_2["success"] is True
+    assert "registrado" in result_2["message"]
+    assert result_2["daily_cancellation_count"] == 2
+    assert result_2["weekly_cancellation_count"] == 2
+
+    # Verificar que no se suspendió después de la segunda cancelación
+    driver_role = session.query(UserHasRole).filter(
+        UserHasRole.id_user == driver_user.id,
+        UserHasRole.id_rol == "DRIVER"
+    ).first()
+    assert driver_role.suspension is False, "No debería estar suspendido después de dos cancelaciones"
+    assert driver_role.status == RoleStatus.APPROVED, "Debería mantener estado APPROVED"
+
+    # Tercera cancelación (DEBERÍA suspender por alcanzar el límite diario)
+    client_request_3 = create_test_request(
+        session, client_user.id, StatusEnum.ON_THE_WAY, driver_user.id)
+    result_3 = driver_canceled_service(
+        session, client_request_3.id, driver_user.id, "Tercera cancelación")
+    assert result_3["success"] is True
+    assert "suspendido" in result_3["message"]
+    assert "7 días" in result_3["message"]
+    assert result_3["daily_cancellation_count"] == 3
+    assert result_3["weekly_cancellation_count"] == 3
+
+    # Verificar que se suspendió después de la tercera cancelación
+    driver_role = session.query(UserHasRole).filter(
+        UserHasRole.id_user == driver_user.id,
+        UserHasRole.id_rol == "DRIVER"
+    ).first()
+    assert driver_role.suspension is True, "Debería estar suspendido después de alcanzar el límite diario"
+    assert driver_role.status == RoleStatus.PENDING, "Debería cambiar a estado PENDING"
+
+    # Verificar que se registraron todas las cancelaciones
+    cancellations = session.query(DriverCancellation).filter(
+        DriverCancellation.id_driver == driver_user.id
+    ).all()
+    assert len(cancellations) == 3, "Deberían haberse registrado 3 cancelaciones"
+
+
+def test_driver_cancellation_suspension_accepted(session, client_user, driver_user):
+    """
+    Caso de prueba para cancelación del conductor en estado ACCEPTED.
+    Verifica:
+    1. Registro de cancelación
+    2. Conteo de cancelaciones diarias/semanales
+    3. Aplicación de suspensión al exceder límites
+    4. Estado del conductor después de la suspensión
+
+    Este test verifica el mismo comportamiento que test_driver_cancellation_suspension_on_the_way
+    pero en el estado ACCEPTED, ya que ambos estados tienen las mismas reglas de cancelación.
+    """
+    # Obtener configuración existente
+    config = session.query(ProjectSettings).first()
+    assert config is not None, "No se encontró la configuración del proyecto"
+    assert config.cancel_max_days == 3, "Límite diario incorrecto"
+    assert config.cancel_max_weeks == 10, "Límite semanal incorrecto"
+    assert config.day_suspension == 7, "Días de suspensión incorrectos"
+
+    # Verificar estado inicial del conductor
+    driver_role = session.query(UserHasRole).filter(
+        UserHasRole.id_user == driver_user.id,
+        UserHasRole.id_rol == "DRIVER"
+    ).first()
+    assert driver_role is not None, "No se encontró el rol del conductor"
+    assert driver_role.suspension is False, "El conductor no debería estar suspendido inicialmente"
+    assert driver_role.status == RoleStatus.APPROVED, "El conductor debería estar aprobado inicialmente"
+
+    # Primera cancelación (no debería suspender)
+    client_request_1 = create_test_request(
+        session, client_user.id, StatusEnum.ACCEPTED, driver_user.id)
+    result_1 = driver_canceled_service(
+        session, client_request_1.id, driver_user.id, "Primera cancelación")
+    assert result_1["success"] is True
+    assert "registrado" in result_1["message"]
+    assert result_1["daily_cancellation_count"] == 1
+    assert result_1["weekly_cancellation_count"] == 1
+
+    # Verificar que no se suspendió después de la primera cancelación
+    driver_role = session.query(UserHasRole).filter(
+        UserHasRole.id_user == driver_user.id,
+        UserHasRole.id_rol == "DRIVER"
+    ).first()
+    assert driver_role.suspension is False, "No debería estar suspendido después de una cancelación"
+    assert driver_role.status == RoleStatus.APPROVED, "Debería mantener estado APPROVED"
+
+    # Segunda cancelación (no debería suspender)
+    client_request_2 = create_test_request(
+        session, client_user.id, StatusEnum.ACCEPTED, driver_user.id)
+    result_2 = driver_canceled_service(
+        session, client_request_2.id, driver_user.id, "Segunda cancelación")
+    assert result_2["success"] is True
+    assert "registrado" in result_2["message"]
+    assert result_2["daily_cancellation_count"] == 2
+    assert result_2["weekly_cancellation_count"] == 2
+
+    # Verificar que no se suspendió después de la segunda cancelación
+    driver_role = session.query(UserHasRole).filter(
+        UserHasRole.id_user == driver_user.id,
+        UserHasRole.id_rol == "DRIVER"
+    ).first()
+    assert driver_role.suspension is False, "No debería estar suspendido después de dos cancelaciones"
+    assert driver_role.status == RoleStatus.APPROVED, "Debería mantener estado APPROVED"
+
+    # Tercera cancelación (DEBERÍA suspender por alcanzar el límite diario)
+    client_request_3 = create_test_request(
+        session, client_user.id, StatusEnum.ACCEPTED, driver_user.id)
+    result_3 = driver_canceled_service(
+        session, client_request_3.id, driver_user.id, "Tercera cancelación")
+    assert result_3["success"] is True
+    assert "suspendido" in result_3["message"]
+    assert "7 días" in result_3["message"]
+    assert result_3["daily_cancellation_count"] == 3
+    assert result_3["weekly_cancellation_count"] == 3
+
+    # Verificar que se suspendió después de la tercera cancelación
+    driver_role = session.query(UserHasRole).filter(
+        UserHasRole.id_user == driver_user.id,
+        UserHasRole.id_rol == "DRIVER"
+    ).first()
+    assert driver_role.suspension is True, "Debería estar suspendido después de alcanzar el límite diario"
+    assert driver_role.status == RoleStatus.PENDING, "Debería cambiar a estado PENDING"
+
+    # Verificar que se registraron todas las cancelaciones
+    cancellations = session.query(DriverCancellation).filter(
+        DriverCancellation.id_driver == driver_user.id
+    ).all()
+    assert len(cancellations) == 3, "Deberían haberse registrado 3 cancelaciones"
