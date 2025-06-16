@@ -24,6 +24,8 @@ from app.models.type_service import TypeService
 from uuid import UUID
 from typing import Dict, Set
 from app.models.payment_method import PaymentMethod
+from app.services.transaction_service import TransactionService
+from app.models.transaction import TransactionType
 
 
 def create_client_request(db: Session, data: ClientRequestCreate, id_client: UUID):
@@ -900,8 +902,12 @@ def client_canceled_service(session: Session, id_client_request: UUID, user_id: 
         raise ValueError(
             "No se encontró la configuración del proyecto con ID 1")
 
+    # Guardar el estado original para el mensaje
+    original_status = client_request.status
+
     # Aplicar penalización según el estado
-    if client_request.status == StatusEnum.ON_THE_WAY:
+    if original_status == StatusEnum.ON_THE_WAY:
+        # Crear registro de penalización
         penality = PenalityUser(
             id_user=client_request.id_client,
             id_client_request=client_request.id,
@@ -910,7 +916,19 @@ def client_canceled_service(session: Session, id_client_request: UUID, user_id: 
             status=statusEnum.PENDING,
         )
         session.add(penality)
-    elif client_request.status == StatusEnum.ARRIVED:
+
+        # Crear transacción de penalización
+        transaction_service = TransactionService(session)
+        transaction_service.create_transaction(
+            user_id=client_request.id_client,
+            expense=int(config.fine_one),
+            type=TransactionType.PENALITY_DEDUCTION,
+            client_request_id=client_request.id,
+            description=f"Penalización por cancelación en ON_THE_WAY"
+        )
+
+    elif original_status == StatusEnum.ARRIVED:
+        # Crear registro de penalización
         penality = PenalityUser(
             id_user=client_request.id_client,
             id_client_request=client_request.id,
@@ -920,18 +938,28 @@ def client_canceled_service(session: Session, id_client_request: UUID, user_id: 
         )
         session.add(penality)
 
+        # Crear transacción de penalización
+        transaction_service = TransactionService(session)
+        transaction_service.create_transaction(
+            user_id=client_request.id_client,
+            expense=int(config.fine_two),
+            type=TransactionType.PENALITY_DEDUCTION,
+            client_request_id=client_request.id,
+            description=f"Penalización por cancelación en ARRIVED"
+        )
+
     # Actualizar estado a CANCELLED
     client_request.status = StatusEnum.CANCELLED
     client_request.updated_at = datetime.utcnow()
     session.commit()
 
-    # Mensaje según si hubo penalización
-    if client_request.status in [StatusEnum.ON_THE_WAY, StatusEnum.ARRIVED]:
-        amount = float(config.fine_one) if client_request.status == StatusEnum.ON_THE_WAY else float(
+    # Mensaje según si hubo penalización (usando el estado original)
+    if original_status in [StatusEnum.ON_THE_WAY, StatusEnum.ARRIVED]:
+        amount = float(config.fine_one) if original_status == StatusEnum.ON_THE_WAY else float(
             config.fine_two)
         return {
             "success": True,
-            "message": f"Solicitud cancelada. Se aplicará una multa de {amount} pesos en su próximo servicio."
+            "message": f"Solicitud cancelada. Se aplicará una penalización de {amount} pesos en su próximo servicio."
         }
     return {
         "success": True,
