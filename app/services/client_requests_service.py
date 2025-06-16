@@ -91,7 +91,7 @@ def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session,
                                driver_point).label("distance"),
             func.timestampdiff(
                 text('MINUTE'),
-                ClientRequest.updated_at,
+                ClientRequest.created_at,
                 func.utc_timestamp()
             ).label("time_difference")
         )
@@ -99,7 +99,7 @@ def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session,
         .join(TypeService, TypeService.id == ClientRequest.type_service_id)
         .filter(
             ClientRequest.status == "CREATED",
-            ClientRequest.updated_at > time_limit
+            ClientRequest.created_at > time_limit
         )
     )
     if type_service_ids:
