@@ -143,8 +143,10 @@ def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session,
             "destination_position": wkb_to_coords(cr.destination_position),
             "distance": float(distance) if distance is not None else None,
             "time_difference": int(time_difference) if time_difference is not None else None,
-            "type_service_id": cr.type_service_id,
-            "type_service_name": type_service_name,
+            "type_service": {
+                "id": cr.type_service_id,
+                "name": type_service_name
+            },
             "client": {
                 "full_name": full_name,
                 "country_code": country_code,

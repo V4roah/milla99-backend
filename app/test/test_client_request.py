@@ -1041,3 +1041,194 @@ def test_nearby_requests_distance_filter():
         f"Distancia de solicitud en mismo punto: {same_point_nearby['distance']} metros")
 
     print("\n=== TEST DE FILTRADO POR DISTANCIA COMPLETADO EXITOSAMENTE ===")
+
+
+def test_nearby_requests_service_type_filter():
+    """
+    Verifica que el filtrado por tipo de servicio de las solicitudes cercanas funciona correctamente.
+
+    Flujo del test:
+    1. Crear múltiples solicitudes con diferentes tipos de servicio:
+       - Solicitud 1: Tipo Car (id: 1)
+       - Solicitud 2: Tipo Motorcycle (id: 2)
+       - Solicitud 3: Tipo Car (id: 1)
+
+    2. Verificar que:
+       - Solo aparecen las solicitudes del tipo de servicio que el conductor puede manejar
+       - Las solicitudes de otros tipos de servicio no aparecen
+       - El filtrado funciona correctamente junto con el filtrado por distancia
+    """
+    print("\n=== INICIANDO TEST DE FILTRADO POR TIPO DE SERVICIO ===")
+
+    # 1. Crear y autenticar conductor (será nuestro punto de referencia)
+    driver_phone = "3010000005"
+    driver_country_code = "+57"
+    print(f"\n1. Creando conductor con teléfono {driver_phone}")
+    driver_token, driver_id = create_and_approve_driver(
+        client, driver_phone, driver_country_code)
+    driver_headers = {"Authorization": f"Bearer {driver_token}"}
+    print(f"Conductor creado con ID: {driver_id}")
+
+    # Posición del conductor (centro de Bogotá)
+    driver_lat = 4.60971
+    driver_lng = -74.08175
+    print(f"Posición del conductor: lat={driver_lat}, lng={driver_lng}")
+
+    # 2. Crear múltiples clientes y solicitudes con diferentes tipos de servicio
+    requests_data = [
+        {
+            "phone": "3011111114",  # Cliente nuevo
+            "name": "Ana Martínez",
+            "location": {
+                "pickup_lat": 4.60971,  # Mismo punto que el conductor
+                "pickup_lng": -74.08175,
+                "destination_lat": 4.702468,
+                "destination_lng": -74.109776
+            },
+            "type_service_id": 1  # Car
+        },
+        {
+            "phone": "3011111115",  # Cliente nuevo
+            "name": "Pedro Rodríguez",
+            "location": {
+                "pickup_lat": 4.61971,  # Cerca del conductor
+                "pickup_lng": -74.08175,
+                "destination_lat": 4.702468,
+                "destination_lng": -74.109776
+            },
+            "type_service_id": 2  # Motorcycle
+        },
+        {
+            "phone": "3011111116",  # Cliente nuevo
+            "name": "Laura Sánchez",
+            "location": {
+                "pickup_lat": 4.62971,  # Cerca del conductor
+                "pickup_lng": -74.08175,
+                "destination_lat": 4.702468,
+                "destination_lng": -74.109776
+            },
+            "type_service_id": 1  # Car
+        }
+    ]
+
+    created_requests = []
+
+    # Crear los clientes primero
+    print("\n2. Creando clientes")
+    for req_data in requests_data:
+        print(f"\nCreando cliente con teléfono {req_data['phone']}")
+        client_data = {
+            "full_name": req_data["name"],
+            "country_code": driver_country_code,
+            "phone_number": req_data["phone"]
+        }
+        create_resp = client.post("/users/", json=client_data)
+        assert create_resp.status_code == 201, f"Error al crear cliente: {create_resp.text}"
+        print(f"Cliente creado exitosamente")
+
+    # Crear las solicitudes
+    print("\n3. Creando solicitudes de clientes")
+    for req_data in requests_data:
+        print(f"\nCreando solicitud para cliente {req_data['phone']}")
+        # Autenticar cliente
+        send_resp = client.post(
+            f"/auth/verify/{driver_country_code}/{req_data['phone']}/send")
+        assert send_resp.status_code == 201, f"Error al enviar código: {send_resp.text}"
+        code = send_resp.json()["message"].split()[-1]
+
+        verify_resp = client.post(
+            f"/auth/verify/{driver_country_code}/{req_data['phone']}/code",
+            json={"code": code})
+        assert verify_resp.status_code == 200, f"Error al verificar código: {verify_resp.text}"
+        client_token = verify_resp.json()["access_token"]
+        client_headers = {"Authorization": f"Bearer {client_token}"}
+
+        # Crear solicitud
+        request_data = {
+            "fare_offered": 20000,
+            "pickup_description": "Test Location",
+            "destination_description": "Test Destination",
+            "pickup_lat": req_data["location"]["pickup_lat"],
+            "pickup_lng": req_data["location"]["pickup_lng"],
+            "destination_lat": req_data["location"]["destination_lat"],
+            "destination_lng": req_data["location"]["destination_lng"],
+            "type_service_id": req_data["type_service_id"],
+            "payment_method_id": 1  # Cash
+        }
+
+        create_resp = client.post(
+            "/client-request/", json=request_data, headers=client_headers)
+        assert create_resp.status_code == 201, f"Error al crear solicitud: {create_resp.text}"
+        request_id = create_resp.json()["id"]
+        print(
+            f"Solicitud creada con ID: {request_id}, Tipo de servicio: {req_data['type_service_id']}")
+
+        created_requests.append({
+            "id": request_id,
+            "location": req_data["location"],
+            "phone": req_data["phone"],
+            "type_service_id": req_data["type_service_id"]
+        })
+
+    print(f"\nSolicitudes creadas: {len(created_requests)}")
+    for req in created_requests:
+        print(
+            f"- ID: {req['id']}, Teléfono: {req['phone']}, Tipo de servicio: {req['type_service_id']}")
+
+    # 3. Verificar las solicitudes cercanas
+    print("\n3. Consultando solicitudes cercanas")
+    nearby_resp = client.get(
+        f"/client-request/nearby?driver_lat={driver_lat}&driver_lng={driver_lng}",
+        headers=driver_headers
+    )
+    assert nearby_resp.status_code == 200, f"Error al consultar nearby: {nearby_resp.text}"
+    nearby_data = nearby_resp.json()
+
+    print(f"\nSolicitudes cercanas encontradas: {len(nearby_data)}")
+    for req in nearby_data:
+        print(
+            f"- ID: {req['id']}, Tipo de servicio: {req.get('type_service', {}).get('id')}, Distancia: {req.get('distance', 'N/A')} metros")
+
+    # 4. Verificar que solo aparecen las solicitudes del tipo de servicio correcto
+    print("\n4. Verificando filtrado por tipo de servicio")
+
+    # Filtrar solo las solicitudes que creamos en este test
+    test_requests = [req for req in nearby_data if any(
+        str(req["id"]) == str(created["id"]) for created in created_requests)]
+    print(f"\nSolicitudes de test encontradas: {len(test_requests)}")
+
+    # Verificar que solo aparecen solicitudes de tipo Car (id: 1)
+    car_requests = [req for req in test_requests if req.get(
+        'type_service', {}).get('id') == 1]
+    motorcycle_requests = [req for req in test_requests if req.get(
+        'type_service', {}).get('id') == 2]
+
+    print(f"Solicitudes de tipo Car encontradas: {len(car_requests)}")
+    print(
+        f"Solicitudes de tipo Motorcycle encontradas: {len(motorcycle_requests)}")
+
+    # Verificar que solo hay solicitudes de tipo Car
+    assert len(
+        motorcycle_requests) == 0, "Se encontraron solicitudes de tipo Motorcycle cuando no deberían aparecer"
+    assert len(
+        car_requests) == 2, f"Se esperaban 2 solicitudes de tipo Car, se encontraron {len(car_requests)}"
+
+    # 5. Verificar que las solicitudes que aparecen están dentro del radio y son del tipo correcto
+    for request in test_requests:
+        print(f"\nVerificando solicitud {request['id']}")
+        # Encontrar la solicitud original para comparar
+        original_request = next(
+            (r for r in created_requests if str(r["id"]) == str(request["id"])), None)
+        assert original_request is not None, f"No se encontró la solicitud original para {request['id']}"
+
+        # Verificar que es del tipo correcto
+        assert request.get('type_service', {}).get('id') == 1, \
+            f"La solicitud {request['id']} es de tipo {request.get('type_service', {}).get('id')}, debería ser tipo 1 (Car)"
+
+        # Verificar que la distancia es correcta
+        distance = request.get("distance", 0)
+        print(f"Distancia verificada: {distance} metros")
+        assert distance >= 0, f"La distancia debe ser positiva, se obtuvo {distance}"
+        assert distance <= 5000, f"La distancia debe ser menor a 5000 metros, se obtuvo {distance}"
+
+    print("\n=== TEST DE FILTRADO POR TIPO DE SERVICIO COMPLETADO EXITOSAMENTE ===")
