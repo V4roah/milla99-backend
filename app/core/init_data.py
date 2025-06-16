@@ -167,6 +167,7 @@ def init_project_settings():
             cancel_max_days=3,
             cancel_max_weeks=10,
             day_suspension=7,
+            request_timeout_minutes=5,
             created_at=datetime(2025, 5, 20, 15, 35, 26),
             updated_at=datetime(2025, 5, 20, 15, 35, 26)
         )

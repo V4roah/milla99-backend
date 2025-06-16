@@ -14,11 +14,14 @@ class ProjectSettingsBase(SQLModel):
     company: str
     bonus: str
     amount: str  # Monto mínimo para retiro de ahorros
-    fine_one: Optional[str] = None  # Multa por cancelación en on the way 
+    fine_one: Optional[str] = None  # Multa por cancelación en on the way
     fine_two: Optional[str] = None  # Multa por cancelación en arrived
     cancel_max_days: Optional[int] = None  # maximas cancelaciones por dias
     cancel_max_weeks: Optional[int] = None  # maximas cancelaciones por semanas
     day_suspension: Optional[int] = None  # Dias de suspension por multa
+    # Tiempo en minutos para que expire una solicitud
+    request_timeout_minutes: Optional[int] = Field(default=5)
+
 
 class ProjectSettings(ProjectSettingsBase, table=True):
     __tablename__ = "project_settings"
@@ -35,6 +38,7 @@ class ProjectSettings(ProjectSettingsBase, table=True):
 class ProjectSettingsCreate(ProjectSettingsBase):
     pass
 
+
 class ProjectSettingsUpdate(SQLModel):
     driver_dist: Optional[str] = None
     referral_1: Optional[str] = None
@@ -46,3 +50,9 @@ class ProjectSettingsUpdate(SQLModel):
     company: Optional[str] = None
     bonus: Optional[str] = None
     amount: Optional[str] = None
+    fine_one: Optional[str] = None
+    fine_two: Optional[str] = None
+    cancel_max_days: Optional[int] = None
+    cancel_max_weeks: Optional[int] = None
+    day_suspension: Optional[int] = None
+    request_timeout_minutes: Optional[int] = None

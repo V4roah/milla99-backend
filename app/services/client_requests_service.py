@@ -72,8 +72,13 @@ def get_time_and_distance_service(origin_lat, origin_lng, destination_lat, desti
 def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session, wkb_to_coords, type_service_ids=None):
     driver_point = func.ST_GeomFromText(
         f'POINT({driver_lng} {driver_lat})', 4326)
+
+    # Obtener el timeout de project_settings
+    project_settings = session.query(ProjectSettings).first()
+    timeout_minutes = project_settings.request_timeout_minutes if project_settings else 5
+
     time_limit = datetime.now(timezone.utc) - \
-        timedelta(minutes=10080)  # 7 días
+        timedelta(minutes=timeout_minutes)
     distance_limit = 5000
     base_query = (
         session.query(
