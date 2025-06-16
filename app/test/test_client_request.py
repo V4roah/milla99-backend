@@ -1462,3 +1462,387 @@ def test_client_request_ratings():
     assert details["driver_rating"] == 5
 
     print("\n=== TEST DE CALIFICACIONES COMPLETADO EXITOSAMENTE ===")
+
+
+def test_driver_trip_offer_flow():
+    """
+    Test que verifica el flujo completo de ofertas de viaje:
+    1. Cliente crea solicitud
+    2. Conductor hace oferta
+    3. Cliente acepta oferta
+    4. Verificación de estados y precios
+    """
+    print("\n=== INICIANDO TEST DE OFERTAS DE VIAJE ===")
+
+    # 1. Crear y autenticar cliente
+    phone_number = "3011111118"  # Nuevo número para evitar conflictos
+    country_code = "+57"
+
+    print("\n1. Creando y autenticando cliente")
+    # Crear usuario
+    user_data = {
+        "full_name": "Usuario de Prueba Ofertas",
+        "country_code": country_code,
+        "phone_number": phone_number
+    }
+    create_user_resp = client.post("/users/", json=user_data)
+    assert create_user_resp.status_code == 201
+    print("Usuario creado exitosamente")
+
+    # Autenticar cliente
+    send_resp = client.post(f"/auth/verify/{country_code}/{phone_number}/send")
+    assert send_resp.status_code == 201
+    code = send_resp.json()["message"].split()[-1]
+
+    verify_resp = client.post(
+        f"/auth/verify/{country_code}/{phone_number}/code",
+        json={"code": code}
+    )
+    assert verify_resp.status_code == 200
+    token = verify_resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 2. Crear solicitud de cliente
+    print("\n2. Creando solicitud de cliente")
+    request_data = {
+        "fare_offered": 20000,
+        "pickup_description": "Suba Bogotá",
+        "destination_description": "Santa Rosita Engativa",
+        "pickup_lat": 4.718136,
+        "pickup_lng": -74.073170,
+        "destination_lat": 4.702468,
+        "destination_lng": -74.109776,
+        "type_service_id": 1,  # Car
+        "payment_method_id": 1  # Cash
+    }
+    create_resp = client.post(
+        "/client-request/", json=request_data, headers=headers)
+    assert create_resp.status_code == 201
+    client_request_id = create_resp.json()["id"]
+    print(f"Solicitud creada con ID: {client_request_id}")
+
+    # 3. Crear y aprobar conductor
+    print("\n3. Creando y aprobando conductor")
+    driver_phone = "3010000008"  # Nuevo número para evitar conflictos
+    driver_country_code = "+57"
+    driver_token, driver_id = create_and_approve_driver(
+        client, driver_phone, driver_country_code)
+    driver_headers = {"Authorization": f"Bearer {driver_token}"}
+
+    # 4. Conductor hace oferta
+    print("\n4. Conductor haciendo oferta")
+    offer_data = {
+        "id_client_request": client_request_id,
+        "fare_offer": 25000,  # Oferta mayor que la del cliente
+        "time": 15,  # minutos estimados
+        "distance": 5.5  # km estimados
+    }
+    offer_resp = client.post("/driver-trip-offers/",
+                             json=offer_data, headers=driver_headers)
+    assert offer_resp.status_code == 201
+    offer_id = offer_resp.json()["id"]
+    print(f"Oferta creada con ID: {offer_id}")
+
+    # 5. Verificar que la oferta se creó correctamente
+    print("\n5. Verificando detalles de la oferta")
+    offers_resp = client.get(
+        f"/driver-trip-offers/by-client-request/{client_request_id}", headers=headers)
+    assert offers_resp.status_code == 200
+    offers = offers_resp.json()
+    assert len(offers) == 1
+    assert offers[0]["fare_offer"] == 25000
+    assert offers[0]["time"] == 15
+    assert offers[0]["distance"] == 5.5
+    print("Detalles de la oferta verificados correctamente")
+
+    # 6. Cliente acepta la oferta
+    print("\n6. Cliente aceptando la oferta")
+    assign_data = {
+        "id_client_request": client_request_id,
+        "id_driver": driver_id,
+        "fare_assigned": 25000  # Usar el precio de la oferta
+    }
+    assign_resp = client.patch(
+        "/client-request/updateDriverAssigned", json=assign_data, headers=headers)
+    assert assign_resp.status_code == 200
+    assert assign_resp.json()["success"] is True
+    print("Oferta aceptada correctamente")
+
+    # 7. Verificar estado final
+    print("\n7. Verificando estado final de la solicitud")
+    detail_resp = client.get(
+        f"/client-request/{client_request_id}", headers=headers)
+    assert detail_resp.status_code == 200
+    request_detail = detail_resp.json()
+    assert request_detail["status"] == str(StatusEnum.ACCEPTED)
+    assert request_detail["fare_assigned"] == 25000
+    assert request_detail["id_driver_assigned"] == str(driver_id)
+    print("Estado final verificado correctamente")
+
+    print("\n=== TEST DE OFERTAS DE VIAJE COMPLETADO EXITOSAMENTE ===")
+
+
+def test_multiple_driver_offers():
+    """
+    Test que verifica el comportamiento cuando múltiples conductores hacen ofertas
+    para la misma solicitud.
+    """
+    print("\n=== INICIANDO TEST DE MÚLTIPLES OFERTAS ===")
+
+    # 1. Crear y autenticar cliente
+    phone_number = "3011111119"  # Nuevo número para evitar conflictos
+    country_code = "+57"
+
+    print("\n1. Creando y autenticando cliente")
+    user_data = {
+        "full_name": "Usuario de Prueba Múltiples Ofertas",
+        "country_code": country_code,
+        "phone_number": phone_number
+    }
+    create_user_resp = client.post("/users/", json=user_data)
+    assert create_user_resp.status_code == 201
+
+    # Autenticar cliente
+    send_resp = client.post(f"/auth/verify/{country_code}/{phone_number}/send")
+    assert send_resp.status_code == 201
+    code = send_resp.json()["message"].split()[-1]
+
+    verify_resp = client.post(
+        f"/auth/verify/{country_code}/{phone_number}/code",
+        json={"code": code}
+    )
+    assert verify_resp.status_code == 200
+    token = verify_resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 2. Crear solicitud de cliente
+    print("\n2. Creando solicitud de cliente")
+    request_data = {
+        "fare_offered": 20000,
+        "pickup_description": "Suba Bogotá",
+        "destination_description": "Santa Rosita Engativa",
+        "pickup_lat": 4.718136,
+        "pickup_lng": -74.073170,
+        "destination_lat": 4.702468,
+        "destination_lng": -74.109776,
+        "type_service_id": 1,  # Car
+        "payment_method_id": 1  # Cash
+    }
+    create_resp = client.post(
+        "/client-request/", json=request_data, headers=headers)
+    assert create_resp.status_code == 201
+    client_request_id = create_resp.json()["id"]
+
+    # 3. Crear múltiples conductores
+    print("\n3. Creando múltiples conductores")
+    drivers = []
+    for i in range(3):  # Crear 3 conductores
+        driver_phone = f"30100000{10+i}"  # Números únicos para cada conductor
+        driver_token, driver_id = create_and_approve_driver(
+            client, driver_phone, country_code)
+        drivers.append({
+            "token": driver_token,
+            "id": driver_id,
+            "headers": {"Authorization": f"Bearer {driver_token}"}
+        })
+
+    # 4. Cada conductor hace una oferta
+    print("\n4. Conductores haciendo ofertas")
+    offers = []
+    for i, driver in enumerate(drivers):
+        offer_data = {
+            "id_client_request": client_request_id,
+            "fare_offer": 20000 + (i + 1) * 1000,  # Ofertas incrementales
+            "time": 15 + i,  # Tiempos diferentes
+            "distance": 5.5 + (i * 0.5)  # Distancias diferentes
+        }
+        offer_resp = client.post(
+            "/driver-trip-offers/", json=offer_data, headers=driver["headers"])
+        assert offer_resp.status_code == 201
+        offers.append(offer_resp.json())
+        print(f"Oferta {i+1} creada con ID: {offer_resp.json()['id']}")
+
+    # 5. Verificar todas las ofertas
+    print("\n5. Verificando todas las ofertas")
+    offers_resp = client.get(
+        f"/driver-trip-offers/by-client-request/{client_request_id}", headers=headers)
+    assert offers_resp.status_code == 200
+    all_offers = offers_resp.json()
+    assert len(
+        all_offers) == 3, f"Se esperaban 3 ofertas, se encontraron {len(all_offers)}"
+
+    # 6. Cliente acepta una oferta específica
+    print("\n6. Cliente aceptando una oferta específica")
+    selected_offer = offers[1]  # Seleccionar la segunda oferta
+    selected_driver = drivers[1]
+    assign_data = {
+        "id_client_request": client_request_id,
+        "id_driver": selected_driver["id"],
+        "fare_assigned": selected_offer["fare_offer"]
+    }
+    assign_resp = client.patch(
+        "/client-request/updateDriverAssigned", json=assign_data, headers=headers)
+    assert assign_resp.status_code == 200
+    assert assign_resp.json()["success"] is True
+
+    # 7. Verificar estado final
+    print("\n7. Verificando estado final")
+    detail_resp = client.get(
+        f"/client-request/{client_request_id}", headers=headers)
+    assert detail_resp.status_code == 200
+    request_detail = detail_resp.json()
+    assert request_detail["status"] == str(StatusEnum.ACCEPTED)
+    assert request_detail["fare_assigned"] == selected_offer["fare_offer"]
+    assert request_detail["id_driver_assigned"] == str(selected_driver["id"])
+
+    print("\n=== TEST DE MÚLTIPLES OFERTAS COMPLETADO EXITOSAMENTE ===")
+
+
+def test_offer_validation():
+    """
+    Test que verifica las validaciones de las ofertas:
+    1. Oferta menor que el precio base
+    2. Oferta en solicitud no válida
+    3. Conductor no aprobado
+    4. Oferta duplicada
+    """
+    print("\n=== INICIANDO TEST DE VALIDACIONES DE OFERTAS ===")
+
+    # 1. Crear y autenticar cliente
+    phone_number = "3011111120"  # Nuevo número para evitar conflictos
+    country_code = "+57"
+
+    print("\n1. Creando y autenticando cliente")
+    user_data = {
+        "full_name": "Usuario de Prueba Validaciones",
+        "country_code": country_code,
+        "phone_number": phone_number
+    }
+    create_user_resp = client.post("/users/", json=user_data)
+    assert create_user_resp.status_code == 201
+
+    # Autenticar cliente
+    send_resp = client.post(f"/auth/verify/{country_code}/{phone_number}/send")
+    assert send_resp.status_code == 201
+    code = send_resp.json()["message"].split()[-1]
+
+    verify_resp = client.post(
+        f"/auth/verify/{country_code}/{phone_number}/code",
+        json={"code": code}
+    )
+    assert verify_resp.status_code == 200
+    token = verify_resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 2. Crear solicitud de cliente
+    print("\n2. Creando solicitud de cliente")
+    request_data = {
+        "fare_offered": 20000,
+        "pickup_description": "Suba Bogotá",
+        "destination_description": "Santa Rosita Engativa",
+        "pickup_lat": 4.718136,
+        "pickup_lng": -74.073170,
+        "destination_lat": 4.702468,
+        "destination_lng": -74.109776,
+        "type_service_id": 1,  # Car
+        "payment_method_id": 1  # Cash
+    }
+    create_resp = client.post(
+        "/client-request/", json=request_data, headers=headers)
+    assert create_resp.status_code == 201
+    client_request_id = create_resp.json()["id"]
+
+    # 3. Crear conductor aprobado
+    print("\n3. Creando conductor aprobado")
+    driver_phone = "3010000013"  # Nuevo número para evitar conflictos
+    driver_token, driver_id = create_and_approve_driver(
+        client, driver_phone, country_code)
+    driver_headers = {"Authorization": f"Bearer {driver_token}"}
+
+    # 4. Intentar oferta menor que el precio base
+    print("\n4. Probando oferta menor que el precio base")
+    low_offer_data = {
+        "id_client_request": client_request_id,
+        "fare_offer": 15000,  # Menor que fare_offered
+        "time": 15,
+        "distance": 5.5
+    }
+    low_offer_resp = client.post(
+        "/driver-trip-offers/", json=low_offer_data, headers=driver_headers)
+    assert low_offer_resp.status_code == 400
+    assert "La oferta debe ser mayor o igual al precio base" in low_offer_resp.json()[
+        "detail"]
+
+    # 5. Intentar oferta en solicitud no válida
+    print("\n5. Probando oferta en solicitud no válida")
+    invalid_request_id = "00000000-0000-0000-0000-000000000000"
+    invalid_offer_data = {
+        "id_client_request": invalid_request_id,
+        "fare_offer": 25000,
+        "time": 15,
+        "distance": 5.5
+    }
+    invalid_offer_resp = client.post(
+        "/driver-trip-offers/", json=invalid_offer_data, headers=driver_headers)
+    assert invalid_offer_resp.status_code == 404
+    assert "Solicitud no encontrada" in invalid_offer_resp.json()["detail"]
+
+    # 6. Crear conductor no aprobado
+    print("\n6. Probando con conductor no aprobado")
+    unapproved_phone = "3010000014"  # Nuevo número para evitar conflictos
+    unapproved_data = {
+        "full_name": "Conductor No Aprobado",
+        "country_code": country_code,
+        "phone_number": unapproved_phone
+    }
+    create_unapproved_resp = client.post("/users/", json=unapproved_data)
+    assert create_unapproved_resp.status_code == 201
+
+    # Autenticar conductor no aprobado
+    send_unapproved_resp = client.post(
+        f"/auth/verify/{country_code}/{unapproved_phone}/send")
+    assert send_unapproved_resp.status_code == 201
+    unapproved_code = send_unapproved_resp.json()["message"].split()[-1]
+
+    verify_unapproved_resp = client.post(
+        f"/auth/verify/{country_code}/{unapproved_phone}/code",
+        json={"code": unapproved_code}
+    )
+    assert verify_unapproved_resp.status_code == 200
+    unapproved_token = verify_unapproved_resp.json()["access_token"]
+    unapproved_headers = {"Authorization": f"Bearer {unapproved_token}"}
+
+    # Intentar oferta con conductor no aprobado
+    unapproved_offer_data = {
+        "id_client_request": client_request_id,
+        "fare_offer": 25000,
+        "time": 15,
+        "distance": 5.5
+    }
+    unapproved_offer_resp = client.post(
+        "/driver-trip-offers/", json=unapproved_offer_data, headers=unapproved_headers)
+    assert unapproved_offer_resp.status_code == 403
+    assert "No tiene permisos para hacer ofertas" in unapproved_offer_resp.json()[
+        "detail"]
+
+    # 7. Intentar oferta duplicada
+    print("\n7. Probando oferta duplicada")
+    # Primera oferta válida
+    valid_offer_data = {
+        "id_client_request": client_request_id,
+        "fare_offer": 25000,
+        "time": 15,
+        "distance": 5.5
+    }
+    first_offer_resp = client.post(
+        "/driver-trip-offers/", json=valid_offer_data, headers=driver_headers)
+    assert first_offer_resp.status_code == 201
+
+    # Intentar oferta duplicada
+    duplicate_offer_resp = client.post(
+        "/driver-trip-offers/", json=valid_offer_data, headers=driver_headers)
+    assert duplicate_offer_resp.status_code == 400
+    assert "Ya existe una oferta para esta solicitud" in duplicate_offer_resp.json()[
+        "detail"]
+
+    print("\n=== TEST DE VALIDACIONES DE OFERTAS COMPLETADO EXITOSAMENTE ===")
