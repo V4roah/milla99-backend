@@ -1785,7 +1785,8 @@ def test_offer_validation():
     invalid_offer_resp = client.post(
         "/driver-trip-offers/", json=invalid_offer_data, headers=driver_headers)
     assert invalid_offer_resp.status_code == 404
-    assert "Solicitud no encontrada" in invalid_offer_resp.json()["detail"]
+    assert "Solicitud de cliente no encontrada" in invalid_offer_resp.json()[
+        "detail"]
 
     # 6. Crear conductor no aprobado
     print("\n6. Probando con conductor no aprobado")
@@ -1822,7 +1823,7 @@ def test_offer_validation():
     unapproved_offer_resp = client.post(
         "/driver-trip-offers/", json=unapproved_offer_data, headers=unapproved_headers)
     assert unapproved_offer_resp.status_code == 403
-    assert "No tiene permisos para hacer ofertas" in unapproved_offer_resp.json()[
+    assert "El usuario no tiene el rol de conductor" in unapproved_offer_resp.json()[
         "detail"]
 
     # 7. Intentar oferta duplicada

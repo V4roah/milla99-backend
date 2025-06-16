@@ -44,6 +44,26 @@ class DriverTripOfferService:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                                 detail="La solicitud no está en estado CREATED")
 
+        # Validar que el precio ofrecido no sea menor al precio base
+        if float(data["fare_offer"]) < float(client_request.fare_offered):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La oferta debe ser mayor o igual al precio base"
+            )
+
+        # Validar que no exista una oferta previa del mismo conductor para esta solicitud
+        existing_offer = self.session.exec(
+            select(DriverTripOffer).where(
+                DriverTripOffer.id_client_request == data["id_client_request"],
+                DriverTripOffer.id_driver == data["id_driver"]
+            )
+        ).first()
+        if existing_offer:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Ya existe una oferta para esta solicitud"
+            )
+
         offer = DriverTripOffer(**data)
         self.session.add(offer)
         self.session.commit()
@@ -90,7 +110,8 @@ class DriverTripOfferService:
                 selfie_url=user.selfie_url
             ) if user else None
 
-            average_rating =get_average_rating(self.session,"driver", user.id) if user else 0.0
+            average_rating = get_average_rating(
+                self.session, "driver", user.id) if user else 0.0
 
             result.append(DriverTripOfferResponse(
                 id=offer.id,
@@ -127,27 +148,28 @@ class DriverTripOfferService:
 
         return result
 
+
 def get_average_rating(session, role: str, id_user: UUID) -> float:
-        if role not in ["driver", "passenger"]:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El parámetro 'role' debe ser 'driver' o 'passenger'"
-            )
+    if role not in ["driver", "passenger"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El parámetro 'role' debe ser 'driver' o 'passenger'"
+        )
 
-        if role == "passenger":
-            # Buscar por id_client y calcular promedio de client_rating
-            avg_rating = session.query(func.avg(ClientRequest.client_rating))\
-                .filter(
-                    ClientRequest.id_client == id_user,
-                    ClientRequest.status == StatusEnum.PAID
-                ).scalar()
-        else:  # role == "driver"
-            # Buscar por id_driver_assigned y calcular promedio de driver_rating
-            avg_rating = session.query(func.avg(ClientRequest.driver_rating))\
-                .filter(
-                    ClientRequest.id_driver_assigned == id_user,
-                    ClientRequest.status == StatusEnum.PAID
-                ).scalar()
+    if role == "passenger":
+        # Buscar por id_client y calcular promedio de client_rating
+        avg_rating = session.query(func.avg(ClientRequest.client_rating))\
+            .filter(
+                ClientRequest.id_client == id_user,
+                ClientRequest.status == StatusEnum.PAID
+        ).scalar()
+    else:  # role == "driver"
+        # Buscar por id_driver_assigned y calcular promedio de driver_rating
+        avg_rating = session.query(func.avg(ClientRequest.driver_rating))\
+            .filter(
+                ClientRequest.id_driver_assigned == id_user,
+                ClientRequest.status == StatusEnum.PAID
+        ).scalar()
 
-        # Si no hay calificaciones, devolver 0 o None según prefieras
-        return avg_rating if avg_rating is not None else 0.0
+    # Si no hay calificaciones, devolver 0 o None según prefieras
+    return avg_rating if avg_rating is not None else 0.0
