@@ -357,3 +357,95 @@ def test_referral_chain_multiple_levels():
                ), f"Usuario C no está en nivel 2: {level_2['users']}"
     assert any(u["id"] == user_d_id for u in level_3["users"]
                ), f"Usuario D no está en nivel 3: {level_3['users']}"
+
+
+def test_referral_percentages_verification():
+    """
+    Propósito:
+        Verificar que los porcentajes por nivel en /referrals/me/earnings-structured coinciden con la configuración de project_settings.
+
+    Flujo:
+        1. Crear usuario padre.
+        2. Autenticar usuario padre y obtener token.
+        3. Crear usuarios en diferentes niveles (hasta nivel 5).
+        4. Consultar /referrals/me/earnings-structured.
+        5. Verificar que los porcentajes coinciden con la configuración:
+           - Nivel 1: 2.0%
+           - Nivel 2: 1.25%
+           - Nivel 3: 0.75%
+           - Nivel 4: 0.5%
+           - Nivel 5: 0.5%
+    """
+    # 1. Crear usuario padre
+    parent_data = {
+        "full_name": "Usuario Padre Porcentajes",
+        "country_code": "+57",
+        "phone_number": "3015555561"  # Número único
+    }
+    parent_resp = client.post("/users/", json=parent_data)
+    assert parent_resp.status_code == 201
+    parent_id = parent_resp.json()["id"]
+
+    # 2. Autenticar usuario padre y obtener token
+    send_code_resp = client.post(
+        f"/auth/verify/{parent_data['country_code']}/{parent_data['phone_number']}/send")
+    assert send_code_resp.status_code == 201
+    code = send_code_resp.json()["message"].split()[-1]
+    verify_resp = client.post(
+        f"/auth/verify/{parent_data['country_code']}/{parent_data['phone_number']}/code",
+        json={"code": code}
+    )
+    assert verify_resp.status_code == 200
+    parent_token = verify_resp.json()["access_token"]
+    parent_headers = {"Authorization": f"Bearer {parent_token}"}
+
+    # 3. Crear usuarios en diferentes niveles (hasta nivel 5)
+    users = []
+    current_phone = parent_data["phone_number"]
+
+    for i in range(5):
+        user_data = {
+            # A, B, C, D, E en lugar de 1, 2, 3, 4, 5
+            "full_name": f"Usuario Nivel {chr(65 + i)}",
+            "country_code": "+57",
+            "phone_number": f"301555556{i+2}",  # Números únicos
+            "referral_phone": current_phone
+        }
+        user_resp = client.post("/users/", json=user_data)
+        assert user_resp.status_code == 201
+        user_id = user_resp.json()["id"]
+        users.append({"id": user_id, "phone": user_data["phone_number"]})
+        current_phone = user_data["phone_number"]
+
+    # 4. Consultar estructura de referidos
+    structure_resp = client.get(
+        "/referrals/me/earnings-structured", headers=parent_headers)
+    assert structure_resp.status_code == 200
+    data = structure_resp.json()
+    assert "levels" in data
+
+    # 5. Verificar que los porcentajes coinciden con la configuración
+    expected_percentages = {
+        1: 2.0,    # referral_1: "0.02" -> 2.0%
+        2: 1.25,   # referral_2: "0.0125" -> 1.25%
+        3: 0.75,   # referral_3: "0.0075" -> 0.75%
+        4: 0.5,    # referral_4: "0.005" -> 0.5%
+        5: 0.5     # referral_5: "0.005" -> 0.5%
+    }
+
+    for level_data in data["levels"]:
+        level = level_data["level"]
+        percentage = level_data["percentage"]
+        expected = expected_percentages.get(level)
+
+        assert expected is not None, f"Nivel {level} no está en la configuración esperada"
+        assert percentage == expected, f"Porcentaje del nivel {level} es {percentage}%, se esperaba {expected}%"
+
+        # Verificar que hay usuarios en este nivel
+        assert len(level_data["users"]
+                   ) > 0, f"El nivel {level} no tiene usuarios"
+
+    # Verificar que se crearon todos los niveles esperados
+    created_levels = [level["level"] for level in data["levels"]]
+    expected_levels = list(expected_percentages.keys())
+    assert created_levels == expected_levels, f"Niveles creados: {created_levels}, esperados: {expected_levels}"
