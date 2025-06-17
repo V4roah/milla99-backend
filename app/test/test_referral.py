@@ -449,3 +449,220 @@ def test_referral_percentages_verification():
     created_levels = [level["level"] for level in data["levels"]]
     expected_levels = list(expected_percentages.keys())
     assert created_levels == expected_levels, f"Niveles creados: {created_levels}, esperados: {expected_levels}"
+
+
+def test_no_duplicate_referrals():
+    """
+    Propósito:
+        Verificar que no se pueden crear relaciones de referidos duplicadas y que solo existe una relación en la base de datos.
+
+    Flujo:
+        1. Crear usuario padre.
+        2. Crear usuario hijo con el padre como referido.
+        3. Intentar crear la misma relación de referido nuevamente.
+        4. Verificar que solo existe una relación en la base de datos.
+        5. Verificar que el usuario hijo mantiene la relación original.
+    """
+    # 1. Crear usuario padre
+    parent_data = {
+        "full_name": "Usuario Padre Duplicado",
+        "country_code": "+57",
+        "phone_number": "3016666671"
+    }
+    parent_resp = client.post("/users/", json=parent_data)
+    assert parent_resp.status_code == 201
+    parent_id = parent_resp.json()["id"]
+
+    # 2. Crear usuario hijo con el padre como referido
+    child_data = {
+        "full_name": "Usuario Hijo Duplicado",
+        "country_code": "+57",
+        "phone_number": "3016666672",
+        "referral_phone": parent_data["phone_number"]
+    }
+    child_resp = client.post("/users/", json=child_data)
+    assert child_resp.status_code == 201
+    child_id = child_resp.json()["id"]
+
+    # 3. Intentar crear la misma relación de referido nuevamente
+    duplicate_data = {
+        "full_name": "Usuario Hijo Duplicado Dos",
+        "country_code": "+57",
+        "phone_number": "3016666673",
+        "referral_phone": parent_data["phone_number"]
+    }
+    duplicate_resp = client.post("/users/", json=duplicate_data)
+    assert duplicate_resp.status_code == 201
+    duplicate_id = duplicate_resp.json()["id"]
+
+    # 4. Verificar que solo existe una relación por usuario en la base de datos
+    with Session(engine) as session:
+        # Verificar que el primer hijo tiene la relación correcta
+        referral_1 = session.exec(
+            select(Referral).where(
+                Referral.user_id == UUID(child_id),
+                Referral.referred_by_id == UUID(parent_id)
+            )
+        ).first()
+        assert referral_1 is not None, "No se encontró la relación del primer hijo"
+
+        # Verificar que el segundo hijo tiene la relación correcta
+        referral_2 = session.exec(
+            select(Referral).where(
+                Referral.user_id == UUID(duplicate_id),
+                Referral.referred_by_id == UUID(parent_id)
+            )
+        ).first()
+        assert referral_2 is not None, "No se encontró la relación del segundo hijo"
+
+        # Verificar que son relaciones diferentes (diferentes IDs)
+        assert referral_1.id != referral_2.id, "Las relaciones tienen el mismo ID"
+
+        # Verificar que cada usuario solo tiene una relación de referido
+        child_referrals = session.exec(
+            select(Referral).where(Referral.user_id == UUID(child_id))
+        ).all()
+        assert len(
+            child_referrals) == 1, f"El primer hijo tiene {len(child_referrals)} relaciones, debería tener 1"
+
+        duplicate_referrals = session.exec(
+            select(Referral).where(Referral.user_id == UUID(duplicate_id))
+        ).all()
+        assert len(
+            duplicate_referrals) == 1, f"El segundo hijo tiene {len(duplicate_referrals)} relaciones, debería tener 1"
+
+        # Verificar que el padre tiene dos referidos
+        parent_referrals = session.exec(
+            select(Referral).where(Referral.referred_by_id == UUID(parent_id))
+        ).all()
+        assert len(
+            parent_referrals) == 2, f"El padre tiene {len(parent_referrals)} referidos, debería tener 2"
+
+        # Verificar que los referidos del padre son los correctos
+        parent_referral_user_ids = [str(ref.user_id)
+                                    for ref in parent_referrals]
+        assert child_id in parent_referral_user_ids, "El primer hijo no está en los referidos del padre"
+        assert duplicate_id in parent_referral_user_ids, "El segundo hijo no está en los referidos del padre"
+
+
+def test_multiple_users_referring_same_person():
+    """
+    Propósito:
+        Verificar que cuando múltiples usuarios se refieren al mismo número de teléfono, 
+        todos quedan como referidos de nivel 1 de esa persona.
+
+    Flujo:
+        1. Crear usuario padre (quien será referido por múltiples personas).
+        2. Crear usuario A que se refiere al padre.
+        3. Crear usuario B que se refiere al mismo padre.
+        4. Crear usuario C que se refiere al mismo padre.
+        5. Consultar la estructura de referidos del padre.
+        6. Verificar que A, B y C están todos en el nivel 1 del padre.
+    """
+    # 1. Crear usuario padre (quien será referido por múltiples personas)
+    parent_data = {
+        "full_name": "Usuario Padre Múltiples",
+        "country_code": "+57",
+        "phone_number": "3017777781"
+    }
+    parent_resp = client.post("/users/", json=parent_data)
+    assert parent_resp.status_code == 201
+    parent_id = parent_resp.json()["id"]
+
+    # 2. Crear usuario A que se refiere al padre
+    user_a_data = {
+        "full_name": "Usuario A Referidor",
+        "country_code": "+57",
+        "phone_number": "3017777782",
+        "referral_phone": parent_data["phone_number"]
+    }
+    user_a_resp = client.post("/users/", json=user_a_data)
+    assert user_a_resp.status_code == 201
+    user_a_id = user_a_resp.json()["id"]
+
+    # 3. Crear usuario B que se refiere al mismo padre
+    user_b_data = {
+        "full_name": "Usuario B Referidor",
+        "country_code": "+57",
+        "phone_number": "3017777783",
+        "referral_phone": parent_data["phone_number"]
+    }
+    user_b_resp = client.post("/users/", json=user_b_data)
+    assert user_b_resp.status_code == 201
+    user_b_id = user_b_resp.json()["id"]
+
+    # 4. Crear usuario C que se refiere al mismo padre
+    user_c_data = {
+        "full_name": "Usuario C Referidor",
+        "country_code": "+57",
+        "phone_number": "3017777784",
+        "referral_phone": parent_data["phone_number"]
+    }
+    user_c_resp = client.post("/users/", json=user_c_data)
+    assert user_c_resp.status_code == 201
+    user_c_id = user_c_resp.json()["id"]
+
+    # 5. Autenticar al padre para consultar sus referidos
+    send_code_resp = client.post(
+        f"/auth/verify/{parent_data['country_code']}/{parent_data['phone_number']}/send")
+    assert send_code_resp.status_code == 201
+    code = send_code_resp.json()["message"].split()[-1]
+    verify_resp = client.post(
+        f"/auth/verify/{parent_data['country_code']}/{parent_data['phone_number']}/code",
+        json={"code": code}
+    )
+    assert verify_resp.status_code == 200
+    parent_token = verify_resp.json()["access_token"]
+    parent_headers = {"Authorization": f"Bearer {parent_token}"}
+
+    # 6. Consultar la estructura de referidos del padre
+    structure_resp = client.get(
+        "/referrals/me/earnings-structured", headers=parent_headers)
+    assert structure_resp.status_code == 200
+    data = structure_resp.json()
+    assert "levels" in data
+
+    # 7. Verificar que A, B y C están todos en el nivel 1 del padre
+    level_1 = next(
+        (level for level in data["levels"] if level["level"] == 1), None)
+    assert level_1 is not None, "No se encontró el nivel 1"
+    assert level_1[
+        "percentage"] == 2.0, f"El porcentaje del nivel 1 no es 2.0% (es {level_1['percentage']}%)"
+
+    # Verificar que hay 3 usuarios en el nivel 1
+    assert len(
+        level_1["users"]) == 3, f"El nivel 1 tiene {len(level_1['users'])} usuarios, debería tener 3"
+
+    # Verificar que los 3 usuarios están en el nivel 1
+    level_1_user_ids = [user["id"] for user in level_1["users"]]
+    assert user_a_id in level_1_user_ids, f"Usuario A {user_a_id} no está en el nivel 1"
+    assert user_b_id in level_1_user_ids, f"Usuario B {user_b_id} no está en el nivel 1"
+    assert user_c_id in level_1_user_ids, f"Usuario C {user_c_id} no está en el nivel 1"
+
+    # 8. Verificar en la base de datos que las relaciones son correctas
+    with Session(engine) as session:
+        # Verificar que el padre tiene 3 referidos
+        parent_referrals = session.exec(
+            select(Referral).where(Referral.referred_by_id == UUID(parent_id))
+        ).all()
+        assert len(
+            parent_referrals) == 3, f"El padre tiene {len(parent_referrals)} referidos, debería tener 3"
+
+        # Verificar que cada usuario hijo tiene exactamente 1 relación
+        user_a_referrals = session.exec(
+            select(Referral).where(Referral.user_id == UUID(user_a_id))
+        ).all()
+        assert len(
+            user_a_referrals) == 1, f"Usuario A tiene {len(user_a_referrals)} relaciones, debería tener 1"
+
+        user_b_referrals = session.exec(
+            select(Referral).where(Referral.user_id == UUID(user_b_id))
+        ).all()
+        assert len(
+            user_b_referrals) == 1, f"Usuario B tiene {len(user_b_referrals)} relaciones, debería tener 1"
+
+        user_c_referrals = session.exec(
+            select(Referral).where(Referral.user_id == UUID(user_c_id))
+        ).all()
+        assert len(
+            user_c_referrals) == 1, f"Usuario C tiene {len(user_c_referrals)} relaciones, debería tener 1"
