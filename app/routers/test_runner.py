@@ -51,6 +51,10 @@ class TestResult:
 
 def run_tests_with_json_output() -> Dict:
     """Ejecuta los tests y devuelve los resultados en formato JSON"""
+    # Asegura que DATABASE_URL esté definida antes de lanzar pytest
+    if not os.environ.get("DATABASE_URL"):
+        os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL", "")
+
     test_result = TestResult()
 
     # Crear archivo temporal para el reporte JSON
@@ -129,6 +133,10 @@ def run_tests_with_json_output() -> Dict:
 
 def run_tests_with_html_output() -> str:
     """Ejecuta los tests y genera un reporte HTML"""
+    # Asegura que DATABASE_URL esté definida antes de lanzar pytest
+    if not os.environ.get("DATABASE_URL"):
+        os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL", "")
+
     # Crear directorio para reportes si no existe
     reports_dir = Path("static/reports")
     reports_dir.mkdir(parents=True, exist_ok=True)
