@@ -5,6 +5,7 @@ from jose import jwt, JWTError
 from app.core.config import settings
 from uuid import UUID
 
+
 class JWTAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # Lista de rutas públicas que no requieren autenticación
@@ -15,25 +16,26 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             ("/auth/verify/", "POST"),  # Rutas de verificación
             ("/docs", "GET"),  # Documentación
             ("/openapi.json", "GET"),  # Esquema OpenAPI
-            ("/drivers/", "POST"), #creacion de drivers
-            ("/drivers/", "PATCH"), #actualizacion de drivers
+            ("/drivers/", "POST"),  # creacion de drivers
+            ("/drivers/", "PATCH"),  # actualizacion de drivers
             ("/openapi.json", "GET"),  # Esquema OpenAPI
             ("/verify-docs/", "GET"),  # Rutas de verify-docs
             ("/verify-docs/", "POST"),
-            #("/drivers-position/", "POST"),  # Rutas POST de drivers-position
-            #("/drivers-position/", "GET"),  # Rutas GET de drivers-position
-            # Rutas DELETE de drivers-position
-            #("/drivers-position/", "DELETE"),
-            # Rutas POST de driver-trip-offers
-            #("/driver-trip-offers/", "POST"),
-            #("/driver-trip-offers/", "GET"),  # Rutas GET de driver-trip-offers
             ("/static/uploads/", "GET"),
-            #("/distance-value/", "GET"),
-            #("/vehicle-type-configuration/", "GET"),
-            # ("/referrals/", "POST"),
-            #("/referrals/", "GET"),
             ("/login-admin/", "POST"),
-
+            ("/static/reports/", "GET"),   # Permitir ver reportes HTML
+            ("/static/reports/", "POST"),  # Permitir post (por si acaso)
+            # ("/drivers-position/", "POST"),  # Rutas POST de drivers-position
+            # ("/drivers-position/", "GET"),  # Rutas GET de drivers-position
+            # Rutas DELETE de drivers-position
+            # ("/drivers-position/", "DELETE"),
+            # Rutas POST de driver-trip-offers
+            # ("/driver-trip-offers/", "POST"),
+            # ("/driver-trip-offers/", "GET"),  # Rutas GET de driver-trip-offers
+            # ("/distance-value/", "GET"),
+            # ("/vehicle-type-configuration/", "GET"),
+            # ("/referrals/", "POST"),
+            # ("/referrals/", "GET"),
         ]
 
         # Verificar si la ruta y método actual están en la lista de públicas
