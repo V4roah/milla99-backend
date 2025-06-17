@@ -157,7 +157,8 @@ def run_tests_with_html_output() -> str:
 
         stdout, stderr = process.communicate()
 
-        if process.returncode == 0 and html_report_path.exists():
+        # Cambiado: solo verifica que el archivo exista
+        if html_report_path.exists():
             return str(html_report_path)
         else:
             raise Exception(f"Error generando reporte HTML: {stderr}")
