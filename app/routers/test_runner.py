@@ -259,37 +259,6 @@ async def list_reports():
     }
 
 
-@router.get("/status", description="""
-Obtiene el estado actual de los tests sin ejecutarlos.
-Útil para verificar si hay tests disponibles.
-
-**Permisos:** Solo administradores pueden ver el estado de tests.
-""")
-async def get_test_status():
-    """Obtiene información sobre los tests disponibles - Solo ADMIN"""
-    test_dir = Path("app/test")
-
-    if not test_dir.exists():
-        return JSONResponse(
-            status_code=status.HTTP_404_NOT_FOUND,
-            content={"error": "Directorio de tests no encontrado"}
-        )
-
-    test_files = []
-    for test_file in test_dir.glob("test_*.py"):
-        test_files.append({
-            "name": test_file.name,
-            "path": str(test_file),
-            "size": test_file.stat().st_size
-        })
-
-    return {
-        "test_directory": str(test_dir),
-        "test_files": test_files,
-        "total_files": len(test_files)
-    }
-
-
 @router.post("/run-specific", description="""
 Ejecuta tests específicos basados en patrones o nombres de archivo.
 
