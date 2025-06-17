@@ -144,3 +144,61 @@ def test_referral_chain_creation():
         print("\nTraceback completo:")
         print(traceback.format_exc())
         raise
+
+
+def test_create_level1_referral():
+    # 1. Crear usuario padre
+    parent_data = {
+        "full_name": "Referral Parent",
+        "country_code": "+57",
+        "phone_number": "3012222233"
+    }
+    parent_resp = client.post("/users/", json=parent_data)
+    assert parent_resp.status_code == 201
+    parent_id = parent_resp.json()["id"]
+
+    # 2. Autenticar usuario padre y obtener token
+    send_code_resp = client.post(
+        f"/auth/verify/{parent_data['country_code']}/{parent_data['phone_number']}/send")
+    assert send_code_resp.status_code == 201
+    code = send_code_resp.json()["message"].split()[-1]
+    verify_resp = client.post(
+        f"/auth/verify/{parent_data['country_code']}/{parent_data['phone_number']}/code",
+        json={"code": code}
+    )
+    assert verify_resp.status_code == 200
+    parent_token = verify_resp.json()["access_token"]
+    parent_headers = {"Authorization": f"Bearer {parent_token}"}
+
+    # 3. Crear usuario hijo con referral_phone del padre
+    child_data = {
+        "full_name": "Referral Child",
+        "country_code": "+57",
+        "phone_number": "3012222234",
+        "referral_phone": parent_data["phone_number"]
+    }
+    child_resp = client.post("/users/", json=child_data)
+    assert child_resp.status_code == 201
+    child_id = child_resp.json()["id"]
+
+    # 4. Verificar en la base de datos la relación Referral
+    with Session(engine) as session:
+        referral = session.exec(
+            select(Referral).where(
+                Referral.user_id == UUID(child_id),
+                Referral.referred_by_id == UUID(parent_id)
+            )
+        ).first()
+        assert referral is not None, "Referral relationship not found"
+
+    # 5. Consultar la estructura de referidos del padre
+    resp = client.get("/referrals/me/earnings-structured",
+                      headers=parent_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    # Verificar que el hijo aparece en el nivel 1
+    level_1 = next(
+        (level for level in data["levels"] if level["level"] == 1), None)
+    assert level_1 is not None, "Level 1 of referrals not found"
+    assert any(user["id"] == child_id for user in level_1["users"]
+               ), "Child does not appear in level 1 referrals"
