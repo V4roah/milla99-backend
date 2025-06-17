@@ -13,11 +13,16 @@ client = TestClient(app)
 
 def test_referral_chain_creation():
     """
-    Test que verifica la creación de una cadena de referidos:
-    1. Crear usuario padre (quien refiere)
-    2. Crear usuario hijo (referido) usando el teléfono del padre
-    3. Verificar que se crea la relación de referido
-    4. Verificar que se puede consultar la cadena de referidos
+    Propósito:
+        Verificar la creación de una cadena de referidos (nivel 1) y la consulta de la estructura de referidos.
+
+    Flujo:
+        1. Crear usuario padre (quien refiere).
+        2. Autenticar usuario padre y obtener token.
+        3. Crear usuario hijo (referido) usando el teléfono del padre.
+        4. Verificar que se crea la relación de referido en la base de datos.
+        5. Consultar /referrals/me/earnings-structured con el token del padre.
+        6. Verificar que el hijo aparece en el nivel 1 de referidos.
     """
     print("\n=== INICIANDO TEST DE CREACIÓN DE CADENA DE REFERIDOS ===")
 
@@ -147,6 +152,18 @@ def test_referral_chain_creation():
 
 
 def test_create_level1_referral():
+    """
+    Propósito:
+        Verificar la creación de un referido de nivel 1 y la consulta de la estructura de referidos.
+
+    Flujo:
+        1. Crear usuario padre.
+        2. Autenticar usuario padre y obtener token.
+        3. Crear usuario hijo con referral_phone del padre.
+        4. Verificar en la base de datos la relación Referral.
+        5. Consultar /referrals/me/earnings-structured con el token del padre.
+        6. Verificar que el hijo aparece en el nivel 1 de referidos.
+    """
     # 1. Crear usuario padre
     parent_data = {
         "full_name": "Referral Parent",
@@ -202,3 +219,141 @@ def test_create_level1_referral():
     assert level_1 is not None, "Level 1 of referrals not found"
     assert any(user["id"] == child_id for user in level_1["users"]
                ), "Child does not appear in level 1 referrals"
+
+
+def test_user_without_referrals():
+    """
+    Propósito:
+        Verificar que el endpoint de referidos responde correctamente cuando el usuario no tiene referidos.
+
+    Flujo:
+        1. Crear un usuario sin referidos.
+        2. Autenticar el usuario y obtener su token.
+        3. Consultar /referrals/me/earnings-structured.
+        4. Verificar que la respuesta contiene el mensaje: "El usuario no tiene referidos."
+    """
+    # 1. Crear un usuario sin referidos
+    user_data = {
+        "full_name": "No Referral User",
+        "country_code": "+57",
+        "phone_number": "3013333344"
+    }
+    user_resp = client.post("/users/", json=user_data)
+    assert user_resp.status_code == 201
+    user_id = user_resp.json()["id"]
+
+    # 2. Autenticar usuario y obtener token
+    send_code_resp = client.post(
+        f"/auth/verify/{user_data['country_code']}/{user_data['phone_number']}/send")
+    assert send_code_resp.status_code == 201
+    code = send_code_resp.json()["message"].split()[-1]
+    verify_resp = client.post(
+        f"/auth/verify/{user_data['country_code']}/{user_data['phone_number']}/code",
+        json={"code": code}
+    )
+    assert verify_resp.status_code == 200
+    user_token = verify_resp.json()["access_token"]
+    user_headers = {"Authorization": f"Bearer {user_token}"}
+
+    # 3. Consultar la estructura de referidos del usuario
+    resp = client.get("/referrals/me/earnings-structured",
+                      headers=user_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    # Verificar que la respuesta contiene el mensaje esperado
+    assert "message" in data, "No se encontró el campo 'message' en la respuesta"
+    assert data[
+        "message"] == "El usuario no tiene referidos.", f"Mensaje inesperado: {data['message']}"
+
+
+def test_referral_chain_multiple_levels():
+    """
+    Propósito:
+        Verificar la creación de una cadena de referidos de varios niveles y la correcta estructura de niveles.
+
+    Flujo:
+        1. Crear usuario A (padre).
+        2. Autenticar usuario A y obtener token.
+        3. Crear usuario B con A como referido.
+        4. Crear usuario C con B como referido.
+        5. Crear usuario D con C como referido.
+        6. Consultar /referrals/me/earnings-structured con el token de A.
+        7. Verificar que B está en nivel 1, C en nivel 2, D en nivel 3.
+    """
+    # 1. Crear usuario A (padre)
+    user_a = {
+        "full_name": "Usuario A",
+        "country_code": "+57",
+        "phone_number": "3013333341"
+    }
+    resp_a = client.post("/users/", json=user_a)
+    assert resp_a.status_code == 201
+    user_a_id = resp_a.json()["id"]
+
+    # 2. Autenticar usuario A y obtener token
+    send_code_a = client.post(
+        f"/auth/verify/{user_a['country_code']}/{user_a['phone_number']}/send")
+    assert send_code_a.status_code == 201
+    code_a = send_code_a.json()["message"].split()[-1]
+    verify_a = client.post(
+        f"/auth/verify/{user_a['country_code']}/{user_a['phone_number']}/code",
+        json={"code": code_a}
+    )
+    assert verify_a.status_code == 200
+    token_a = verify_a.json()["access_token"]
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+
+    # 3. Crear usuario B con A como referido
+    user_b = {
+        "full_name": "Usuario B",
+        "country_code": "+57",
+        "phone_number": "3013333342",
+        "referral_phone": user_a["phone_number"]
+    }
+    resp_b = client.post("/users/", json=user_b)
+    assert resp_b.status_code == 201
+    user_b_id = resp_b.json()["id"]
+
+    # 4. Crear usuario C con B como referido
+    user_c = {
+        "full_name": "Usuario C",
+        "country_code": "+57",
+        "phone_number": "3013333343",
+        "referral_phone": user_b["phone_number"]
+    }
+    resp_c = client.post("/users/", json=user_c)
+    assert resp_c.status_code == 201
+    user_c_id = resp_c.json()["id"]
+
+    # 5. Crear usuario D con C como referido
+    user_d = {
+        "full_name": "Usuario D",
+        "country_code": "+57",
+        "phone_number": "3013333344",
+        "referral_phone": user_c["phone_number"]
+    }
+    resp_d = client.post("/users/", json=user_d)
+    assert resp_d.status_code == 201
+    user_d_id = resp_d.json()["id"]
+
+    # 6. Consultar la estructura de referidos de A
+    resp_structure = client.get(
+        "/referrals/me/earnings-structured", headers=headers_a)
+    assert resp_structure.status_code == 200
+    data = resp_structure.json()
+    assert "levels" in data
+
+    # 7. Verificar que B está en nivel 1, C en nivel 2, D en nivel 3
+    level_1 = next((lvl for lvl in data["levels"] if lvl["level"] == 1), None)
+    level_2 = next((lvl for lvl in data["levels"] if lvl["level"] == 2), None)
+    level_3 = next((lvl for lvl in data["levels"] if lvl["level"] == 3), None)
+    assert level_1 is not None, "No se encontró el nivel 1"
+    assert level_2 is not None, "No se encontró el nivel 2"
+    assert level_3 is not None, "No se encontró el nivel 3"
+
+    assert any(u["id"] == user_b_id for u in level_1["users"]
+               ), f"Usuario B no está en nivel 1: {level_1['users']}"
+    assert any(u["id"] == user_c_id for u in level_2["users"]
+               ), f"Usuario C no está en nivel 2: {level_2['users']}"
+    assert any(u["id"] == user_d_id for u in level_3["users"]
+               ), f"Usuario D no está en nivel 3: {level_3['users']}"
