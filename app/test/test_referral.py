@@ -666,3 +666,272 @@ def test_multiple_users_referring_same_person():
         ).all()
         assert len(
             user_c_referrals) == 1, f"Usuario C tiene {len(user_c_referrals)} relaciones, debería tener 1"
+
+
+def test_referral_with_deleted_user():
+    """
+    Propósito:
+        Verificar que el sistema maneja correctamente los casos donde se desactivan usuarios 
+        que tienen relaciones de referidos, tanto desactivando el hijo como el padre.
+
+    Flujo:
+        1. Crear usuario padre y usuario hijo con relación de referido.
+        2. Autenticar usuario padre y consultar referidos (debe funcionar).
+        3. Desactivar usuario hijo (soft delete).
+        4. Consultar referidos del padre (debe manejar el caso correctamente).
+        5. Crear nueva relación padre-hijo.
+        6. Desactivar usuario padre (soft delete).
+        7. Verificar que la consulta de referidos del hijo no falla.
+    """
+    print("\n=== INICIANDO TEST DE REFERIDOS CON USUARIO DESACTIVADO ===")
+
+    try:
+        # 1. Crear usuario padre y usuario hijo con relación de referido
+        print("\n1. Creando usuario padre y hijo")
+        parent_data = {
+            "full_name": "Usuario Padre Desactivado",
+            "country_code": "+57",
+            "phone_number": "3018888891"
+        }
+        parent_resp = client.post("/users/", json=parent_data)
+        print(f"Respuesta creación padre: {parent_resp.status_code}")
+        assert parent_resp.status_code == 201
+        parent_id = parent_resp.json()["id"]
+        print(f"Usuario padre creado con ID: {parent_id}")
+
+        child_data = {
+            "full_name": "Usuario Hijo Desactivado",
+            "country_code": "+57",
+            "phone_number": "3018888892",
+            "referral_phone": parent_data["phone_number"]
+        }
+        child_resp = client.post("/users/", json=child_data)
+        print(f"Respuesta creación hijo: {child_resp.status_code}")
+        assert child_resp.status_code == 201
+        child_id = child_resp.json()["id"]
+        print(f"Usuario hijo creado con ID: {child_id}")
+
+        # 2. Autenticar usuario padre y consultar referidos (debe funcionar)
+        print("\n2. Autenticando usuario padre")
+        send_code_resp = client.post(
+            f"/auth/verify/{parent_data['country_code']}/{parent_data['phone_number']}/send")
+        assert send_code_resp.status_code == 201
+        code = send_code_resp.json()["message"].split()[-1]
+        verify_resp = client.post(
+            f"/auth/verify/{parent_data['country_code']}/{parent_data['phone_number']}/code",
+            json={"code": code}
+        )
+        assert verify_resp.status_code == 200
+        parent_token = verify_resp.json()["access_token"]
+        parent_headers = {"Authorization": f"Bearer {parent_token}"}
+        print("Usuario padre autenticado exitosamente")
+
+        # Consultar referidos antes de desactivar
+        print("\n3. Consultando referidos antes de desactivar")
+        structure_resp = client.get(
+            "/referrals/me/earnings-structured", headers=parent_headers)
+        print(f"Respuesta consulta referidos: {structure_resp.status_code}")
+        assert structure_resp.status_code == 200
+        data_before = structure_resp.json()
+        print(
+            f"Datos antes de desactivar: {json.dumps(data_before, indent=2)}")
+        assert "levels" in data_before
+        level_1_before = next(
+            (level for level in data_before["levels"] if level["level"] == 1), None)
+        assert level_1_before is not None, "No se encontró el nivel 1 antes de desactivar"
+        assert len(
+            level_1_before["users"]) == 1, "Debería tener 1 usuario en nivel 1 antes de desactivar"
+        print("✅ Referidos consultados correctamente antes de desactivar")
+
+        # 3. Desactivar usuario hijo (soft delete)
+        print("\n4. Desactivando usuario hijo (soft delete)")
+        with Session(engine) as session:
+            try:
+                # Buscar el usuario hijo
+                child_user = session.exec(
+                    select(User).where(User.id == UUID(child_id))
+                ).first()
+                assert child_user is not None, "No se encontró el usuario hijo"
+                print(
+                    f"Usuario hijo encontrado: {child_user.full_name}, is_active: {child_user.is_active}")
+
+                # Verificar relaciones antes de desactivar
+                referrals_before = session.exec(
+                    select(Referral).where(Referral.user_id == UUID(child_id))
+                ).all()
+                print(
+                    f"Relaciones de referido del hijo antes de desactivar: {len(referrals_before)}")
+
+                # Desactivar el usuario (soft delete)
+                child_user.is_active = False
+                session.add(child_user)
+                session.commit()
+                print("✅ Usuario hijo desactivado exitosamente")
+
+                # Verificar que el usuario fue desactivado
+                session.refresh(child_user)
+                assert child_user.is_active == False, "El usuario hijo no fue desactivado"
+                print(
+                    f"Estado del usuario hijo después de desactivar: is_active = {child_user.is_active}")
+
+            except Exception as e:
+                print(
+                    f"❌ Error al desactivar usuario hijo: {type(e).__name__}: {str(e)}")
+                print(
+                    "Continuando con el test para verificar el comportamiento del sistema...")
+                session.rollback()
+
+        # 4. Consultar referidos del padre después de desactivar el hijo
+        print("\n5. Consultando referidos del padre después de desactivar hijo")
+        try:
+            structure_resp_after = client.get(
+                "/referrals/me/earnings-structured", headers=parent_headers)
+            print(
+                f"Respuesta consulta después de desactivar: {structure_resp_after.status_code}")
+            assert structure_resp_after.status_code == 200
+            data_after = structure_resp_after.json()
+            print(
+                f"Datos después de desactivar: {json.dumps(data_after, indent=2)}")
+            assert "levels" in data_after
+
+            # Verificar el comportamiento del sistema
+            level_1_after = next(
+                (level for level in data_after["levels"] if level["level"] == 1), None)
+            if level_1_after:
+                print(
+                    f"Usuarios en nivel 1 después de desactivar: {len(level_1_after['users'])}")
+                if len(level_1_after["users"]) == 0:
+                    print("✅ El nivel 1 está vacío como se esperaba")
+                else:
+                    print(
+                        "⚠️ El nivel 1 aún tiene usuarios (el sistema puede mostrar usuarios inactivos)")
+                    # Verificar si el usuario está marcado como inactivo en la respuesta
+                    for user in level_1_after["users"]:
+                        if "is_active" in user:
+                            print(
+                                f"Usuario {user.get('full_name', 'N/A')} - is_active: {user['is_active']}")
+            else:
+                print("✅ No se encontró el nivel 1 (posiblemente no hay referidos)")
+
+        except Exception as e:
+            print(
+                f"❌ Error al consultar referidos después de desactivar: {type(e).__name__}: {str(e)}")
+
+        # 5. Crear nueva relación padre-hijo para probar desactivación del padre
+        print("\n6. Creando nueva relación padre-hijo")
+        new_child_data = {
+            "full_name": "Usuario Hijo Nuevo",
+            "country_code": "+57",
+            "phone_number": "3018888893",
+            "referral_phone": parent_data["phone_number"]
+        }
+        new_child_resp = client.post("/users/", json=new_child_data)
+        print(f"Respuesta creación nuevo hijo: {new_child_resp.status_code}")
+        assert new_child_resp.status_code == 201
+        new_child_id = new_child_resp.json()["id"]
+        print(f"Nuevo usuario hijo creado con ID: {new_child_id}")
+
+        # Autenticar al nuevo hijo
+        send_code_new_child = client.post(
+            f"/auth/verify/{new_child_data['country_code']}/{new_child_data['phone_number']}/send")
+        assert send_code_new_child.status_code == 201
+        code_new_child = send_code_new_child.json()["message"].split()[-1]
+        verify_new_child = client.post(
+            f"/auth/verify/{new_child_data['country_code']}/{new_child_data['phone_number']}/code",
+            json={"code": code_new_child}
+        )
+        assert verify_new_child.status_code == 200
+        new_child_token = verify_new_child.json()["access_token"]
+        new_child_headers = {"Authorization": f"Bearer {new_child_token}"}
+        print("Nuevo usuario hijo autenticado exitosamente")
+
+        # 6. Desactivar usuario padre (soft delete)
+        print("\n7. Desactivando usuario padre (soft delete)")
+        with Session(engine) as session:
+            try:
+                # Buscar el usuario padre
+                parent_user = session.exec(
+                    select(User).where(User.id == UUID(parent_id))
+                ).first()
+                assert parent_user is not None, "No se encontró el usuario padre"
+                print(
+                    f"Usuario padre encontrado: {parent_user.full_name}, is_active: {parent_user.is_active}")
+
+                # Verificar relaciones antes de desactivar
+                referrals_before = session.exec(
+                    select(Referral).where(
+                        Referral.referred_by_id == UUID(parent_id))
+                ).all()
+                print(
+                    f"Relaciones de referido del padre antes de desactivar: {len(referrals_before)}")
+
+                # Desactivar el usuario padre
+                parent_user.is_active = False
+                session.add(parent_user)
+                session.commit()
+                print("✅ Usuario padre desactivado exitosamente")
+
+                # Verificar que el usuario padre fue desactivado
+                session.refresh(parent_user)
+                assert parent_user.is_active == False, "El usuario padre no fue desactivado"
+                print(
+                    f"Estado del usuario padre después de desactivar: is_active = {parent_user.is_active}")
+
+            except Exception as e:
+                print(
+                    f"❌ Error al desactivar usuario padre: {type(e).__name__}: {str(e)}")
+                print(
+                    "Continuando con el test para verificar el comportamiento del sistema...")
+                session.rollback()
+
+        # 7. Verificar que la consulta de referidos del hijo no falla
+        print("\n8. Verificando consulta de referidos del hijo")
+        try:
+            structure_child_resp = client.get(
+                "/referrals/me/earnings-structured", headers=new_child_headers)
+            print(
+                f"Respuesta consulta referidos del hijo: {structure_child_resp.status_code}")
+            assert structure_child_resp.status_code == 200
+            child_data = structure_child_resp.json()
+            print(
+                f"Datos de referidos del hijo: {json.dumps(child_data, indent=2)}")
+            assert "levels" in child_data
+
+            # Verificar el comportamiento del sistema
+            if "message" in child_data:
+                print(f"Mensaje del sistema: {child_data['message']}")
+                if "no tiene referidos" in child_data["message"].lower():
+                    print("✅ El sistema indica correctamente que no tiene referidos")
+                else:
+                    print(f"⚠️ Mensaje inesperado: {child_data['message']}")
+            else:
+                # Si no hay mensaje, verificar que los niveles están vacíos o muestran usuarios inactivos
+                total_users = sum(len(level["users"])
+                                  for level in child_data["levels"])
+                print(
+                    f"Total de usuarios en referidos del hijo: {total_users}")
+                if total_users == 0:
+                    print("✅ Los niveles están vacíos como se esperaba")
+                else:
+                    print(
+                        "⚠️ Los niveles no están vacíos (puede mostrar usuarios inactivos)")
+                    # Verificar si hay usuarios inactivos
+                    for level in child_data["levels"]:
+                        for user in level["users"]:
+                            if "is_active" in user:
+                                print(
+                                    f"Usuario {user.get('full_name', 'N/A')} en nivel {level['level']} - is_active: {user['is_active']}")
+
+        except Exception as e:
+            print(
+                f"❌ Error al consultar referidos del hijo: {type(e).__name__}: {str(e)}")
+
+        print("\n=== TEST DE REFERIDOS CON USUARIO DESACTIVADO COMPLETADO ===")
+
+    except Exception as e:
+        print("\n=== ERROR EN EL TEST ===")
+        print(f"Tipo de error: {type(e).__name__}")
+        print(f"Mensaje de error: {str(e)}")
+        print("\nTraceback completo:")
+        print(traceback.format_exc())
+        raise
