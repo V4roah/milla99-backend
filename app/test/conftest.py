@@ -12,7 +12,31 @@ from app.core.config import settings
 TEST_DB_NAME = "milla99_test"
 
 
-@pytest.fixture(scope="session", autouse=True)
+def clean_database():
+    """Limpia todas las tablas de la base de datos de test"""
+    try:
+        # Obtener todas las tablas
+        inspector = sqlalchemy.inspect(engine)
+        table_names = inspector.get_table_names()
+
+        # Desactivar foreign key checks temporalmente
+        with engine.connect() as conn:
+            conn.execute(sqlalchemy.text("SET FOREIGN_KEY_CHECKS = 0"))
+
+            # Limpiar todas las tablas
+            for table_name in table_names:
+                if table_name != 'alembic_version':  # No tocar la tabla de migraciones
+                    conn.execute(sqlalchemy.text(
+                        f"TRUNCATE TABLE {table_name}"))
+
+            # Reactivar foreign key checks
+            conn.execute(sqlalchemy.text("SET FOREIGN_KEY_CHECKS = 1"))
+            conn.commit()
+    except Exception as e:
+        print(f"Error limpiando base de datos: {e}")
+
+
+@pytest.fixture(autouse=True)
 def create_and_drop_test_db():
     # Crear la base de datos
     engine = sqlalchemy.create_engine(settings.DATABASE_URL.rsplit('/', 1)[0])
@@ -43,12 +67,21 @@ engine = create_engine(
 )
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(autouse=True)
 def setup_db_data():
+    # Limpiar la base de datos antes de cada test
+    clean_database()
+
+    # Crear las tablas si no existen
     SQLModel.metadata.create_all(engine)
-    init_data()  # Pobla la base de datos con datos mínimos y de ejemplo
+
+    # Poblar con datos iniciales
+    init_data()
+
     yield
-    SQLModel.metadata.drop_all(engine)
+
+    # Limpiar después del test
+    clean_database()
 
 
 @pytest.fixture(name="session")
