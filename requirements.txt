@@ -65,3 +65,6 @@ yarl==1.20.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
 cryptography==42.0.5
+
+# Testing de carga
+locust==2.24.0
