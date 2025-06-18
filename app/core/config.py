@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     MAX_VERIFICATION_ATTEMPTS: int = 3
 
     # Deberías cambiar esto
-    SECRET_KEY: str = "efdfd804e424be4cd3d4c94f7769da129c45ff2a4a7a1c365e8641715f621000"
+    SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080
 
