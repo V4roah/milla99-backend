@@ -20,7 +20,7 @@ from app.models.project_settings import ProjectSettings
 from app.models.company_account import CompanyAccount, cashflow
 from app.models.type_service import TypeService
 
-from sqlalchemy import func, and_, or_, text
+from sqlalchemy import func, and_, or_, text, case
 
 
 class StatisticsService:
@@ -680,6 +680,184 @@ class StatisticsService:
                     "overall_margin_percentage": round(overall_margin, 2),
                     "most_profitable_service": max(profit_margin_by_service_type.items(), key=lambda x: x[1]["margin_percentage"])[0] if profit_margin_by_service_type else None,
                     "most_profitable_zone": max(profit_margin_by_zone.items(), key=lambda x: x[1]["margin_percentage"])[0] if profit_margin_by_zone else None
+                }
+            }
+
+            # --- 3.6. Vehicle Type Analytics (Estadísticas Detalladas por Tipo de Vehículo) ---
+            # Conductores por tipo de vehículo
+            drivers_by_vehicle_type_query = select(
+                VehicleType.name,
+                func.count(func.distinct(User.id)).label('total_drivers'),
+                func.count(func.distinct(
+                    case(
+                        (and_(
+                            ClientRequest.id_driver_assigned.is_not(None),
+                            ClientRequest.created_at >= func.date_sub(
+                                func.curdate(), text('INTERVAL 30 DAY'))
+                        ), User.id),
+                        else_=None
+                    )
+                )).label('active_drivers'),
+                func.count(func.distinct(
+                    case(
+                        (and_(
+                            DriverDocuments.status == DriverStatus.APPROVED,
+                            DriverDocuments.document_type_id.is_not(None)
+                        ), User.id),
+                        else_=None
+                    )
+                )).label('drivers_with_approved_docs')
+            ).join(
+                UserHasRole, and_(
+                    User.id == UserHasRole.id_user,
+                    UserHasRole.id_rol == "DRIVER",
+                    UserHasRole.status == RoleStatus.APPROVED
+                )
+            ).join(
+                DriverInfo, User.id == DriverInfo.user_id
+            ).join(
+                VehicleInfo, DriverInfo.id == VehicleInfo.driver_info_id
+            ).join(
+                VehicleType, VehicleInfo.vehicle_type_id == VehicleType.id
+            ).outerjoin(
+                ClientRequest, User.id == ClientRequest.id_driver_assigned
+            ).outerjoin(
+                DriverDocuments, DriverInfo.id == DriverDocuments.driver_info_id
+            ).group_by(VehicleType.name)
+
+            drivers_by_vehicle_results = self.session.exec(
+                drivers_by_vehicle_type_query).all()
+
+            drivers_by_vehicle_type = {}
+            for vehicle_type_name, total_drivers, active_drivers, drivers_with_docs in drivers_by_vehicle_results:
+                vehicle_key = vehicle_type_name.lower().replace(' ', '_')
+                drivers_by_vehicle_type[vehicle_key] = {
+                    "total": total_drivers,
+                    "active": active_drivers,
+                    "with_approved_docs": drivers_with_docs,
+                    "vehicle_type_name": vehicle_type_name
+                }
+
+            # Rendimiento por tipo de vehículo
+            performance_by_vehicle_query = select(
+                VehicleType.name,
+                func.count(ClientRequest.id).label('total_trips'),
+                func.sum(ClientRequest.fare_assigned).label('total_revenue'),
+                func.avg(ClientRequest.fare_assigned).label(
+                    'average_trip_value'),
+                func.avg(ClientRequest.driver_rating).label('average_rating')
+            ).join(
+                TypeService, VehicleType.id == TypeService.vehicle_type_id
+            ).join(
+                ClientRequest, TypeService.id == ClientRequest.type_service_id
+            ).where(
+                ClientRequest.status == StatusEnum.PAID
+            )
+
+            if service_type_id:
+                performance_by_vehicle_query = performance_by_vehicle_query.where(
+                    ClientRequest.type_service_id == service_type_id
+                )
+            if driver_uuid:
+                performance_by_vehicle_query = performance_by_vehicle_query.where(
+                    ClientRequest.id_driver_assigned == driver_uuid
+                )
+
+            performance_by_vehicle_query = self._build_date_filter(
+                performance_by_vehicle_query, start_date, end_date, ClientRequest.created_at
+            )
+            performance_by_vehicle_query = performance_by_vehicle_query.group_by(
+                VehicleType.name)
+
+            performance_results = self.session.exec(
+                performance_by_vehicle_query).all()
+
+            performance_by_vehicle_type = {}
+            for vehicle_type_name, total_trips, total_revenue, avg_trip_value, avg_rating in performance_results:
+                vehicle_key = vehicle_type_name.lower().replace(' ', '_')
+                performance_by_vehicle_type[vehicle_key] = {
+                    "total_trips": total_trips,
+                    "total_revenue": float(total_revenue) if total_revenue else 0,
+                    "average_trip_value": round(float(avg_trip_value), 2) if avg_trip_value else 0,
+                    "average_rating": round(float(avg_rating), 2) if avg_rating else 0,
+                    "vehicle_type_name": vehicle_type_name
+                }
+
+            # Top performers por tipo de vehículo
+            top_performers_by_vehicle = {}
+            for vehicle_type_name in [vt.name for vt in self.session.exec(select(VehicleType)).all()]:
+                vehicle_key = vehicle_type_name.lower().replace(' ', '_')
+
+                top_performers_query = select(
+                    User.id,
+                    User.full_name,
+                    func.count(ClientRequest.id).label('total_trips'),
+                    func.sum(ClientRequest.fare_assigned).label(
+                        'total_revenue'),
+                    func.avg(ClientRequest.driver_rating).label(
+                        'average_rating')
+                ).join(
+                    UserHasRole, and_(
+                        User.id == UserHasRole.id_user,
+                        UserHasRole.id_rol == "DRIVER",
+                        UserHasRole.status == RoleStatus.APPROVED
+                    )
+                ).join(
+                    DriverInfo, User.id == DriverInfo.user_id
+                ).join(
+                    VehicleInfo, DriverInfo.id == VehicleInfo.driver_info_id
+                ).join(
+                    VehicleType, VehicleInfo.vehicle_type_id == VehicleType.id
+                ).join(
+                    ClientRequest, User.id == ClientRequest.id_driver_assigned
+                ).where(
+                    VehicleType.name == vehicle_type_name,
+                    ClientRequest.status == StatusEnum.PAID
+                )
+
+                if service_type_id:
+                    top_performers_query = top_performers_query.where(
+                        ClientRequest.type_service_id == service_type_id
+                    )
+                if driver_uuid:
+                    top_performers_query = top_performers_query.where(
+                        ClientRequest.id_driver_assigned == driver_uuid
+                    )
+
+                top_performers_query = self._build_date_filter(
+                    top_performers_query, start_date, end_date, ClientRequest.created_at
+                )
+                top_performers_query = top_performers_query.group_by(
+                    User.id, User.full_name)
+                top_performers_query = top_performers_query.order_by(
+                    func.count(ClientRequest.id).desc())
+                top_performers_query = top_performers_query.limit(
+                    5)  # Top 5 conductores
+
+                top_performers_results = self.session.exec(
+                    top_performers_query).all()
+
+                top_performers_by_vehicle[vehicle_key] = [
+                    {
+                        "driver_id": str(driver_id),
+                        "driver_name": driver_name,
+                        "vehicle_type": vehicle_type_name,
+                        "total_trips": total_trips,
+                        "total_revenue": float(total_revenue) if total_revenue else 0,
+                        "average_rating": round(float(avg_rating), 2) if avg_rating else 0
+                    }
+                    for driver_id, driver_name, total_trips, total_revenue, avg_rating in top_performers_results
+                ]
+
+            response_data["vehicle_analytics"] = {
+                "drivers_by_vehicle_type": drivers_by_vehicle_type,
+                "performance_by_vehicle_type": performance_by_vehicle_type,
+                "top_performers_by_vehicle": top_performers_by_vehicle,
+                "summary": {
+                    "total_vehicle_types": len(drivers_by_vehicle_type),
+                    "most_popular_vehicle": max(drivers_by_vehicle_type.items(), key=lambda x: x[1]["total"])[0] if drivers_by_vehicle_type else None,
+                    "highest_revenue_vehicle": max(performance_by_vehicle_type.items(), key=lambda x: x[1]["total_revenue"])[0] if performance_by_vehicle_type else None,
+                    "best_rated_vehicle": max(performance_by_vehicle_type.items(), key=lambda x: x[1]["average_rating"])[0] if performance_by_vehicle_type else None
                 }
             }
 
