@@ -20,7 +20,7 @@ from app.models.project_settings import ProjectSettings
 from app.models.company_account import CompanyAccount, cashflow
 from app.models.type_service import TypeService
 
-from sqlalchemy import func, and_, or_
+from sqlalchemy import func, and_, or_, text
 
 
 class StatisticsService:
@@ -288,6 +288,264 @@ class StatisticsService:
                 "total_withdrawals": total_withdrawals,
                 "net_income": net_income,
                 "average_driver_income": round(average_driver_income, 2)
+            }
+
+            # --- 3.1. Revenue Breakdown (Desglose de Ingresos) ---
+            # Ingresos brutos totales (todos los viajes completados)
+            total_gross_revenue_query = select(func.sum(ClientRequest.fare_assigned)).where(
+                ClientRequest.status == StatusEnum.PAID
+            )
+            if service_type_id:
+                total_gross_revenue_query = total_gross_revenue_query.where(
+                    ClientRequest.type_service_id == service_type_id
+                )
+            if driver_uuid:
+                total_gross_revenue_query = total_gross_revenue_query.where(
+                    ClientRequest.id_driver_assigned == driver_uuid
+                )
+            total_gross_revenue_query = self._build_date_filter(
+                total_gross_revenue_query, start_date, end_date, ClientRequest.updated_at)
+            total_gross_revenue = self.session.exec(
+                total_gross_revenue_query).first() or 0
+
+            # Pagos totales a referidos
+            total_referral_payments_query = select(func.sum(Transaction.income)).where(
+                Transaction.type.in_([
+                    TransactionType.REFERRAL_1,
+                    TransactionType.REFERRAL_2,
+                    TransactionType.REFERRAL_3,
+                    TransactionType.REFERRAL_4,
+                    TransactionType.REFERRAL_5
+                ])
+            )
+            if driver_uuid:
+                total_referral_payments_query = total_referral_payments_query.where(
+                    Transaction.user_id == driver_uuid
+                )
+            total_referral_payments_query = self._build_date_filter(
+                total_referral_payments_query, start_date, end_date, Transaction.date)
+            total_referral_payments = self.session.exec(
+                total_referral_payments_query).first() or 0
+
+            # Ahorros totales de conductores
+            total_driver_savings_query = select(func.sum(DriverSavings.mount))
+            if driver_uuid:
+                total_driver_savings_query = total_driver_savings_query.where(
+                    DriverSavings.user_id == driver_uuid
+                )
+            total_driver_savings_query = self._build_date_filter(
+                total_driver_savings_query, start_date, end_date, DriverSavings.created_at)
+            total_driver_savings = self.session.exec(
+                total_driver_savings_query).first() or 0
+
+            # Calcular distribución de ingresos
+            driver_net_income = float(
+                total_gross_revenue) * 0.85  # 85% para conductores
+            # 10% comisión plataforma
+            platform_commission = float(total_gross_revenue) * 0.10
+            company_net_profit = float(total_income)  # Ya calculado arriba
+
+            response_data["financial_stats"]["revenue_breakdown"] = {
+                "total_gross_revenue": float(total_gross_revenue),
+                "driver_net_income": round(driver_net_income, 2),
+                "platform_commission": round(platform_commission, 2),
+                "referral_payments": float(total_referral_payments),
+                "driver_savings": float(total_driver_savings),
+                "company_net_profit": company_net_profit
+            }
+
+            # --- 3.2. Cash Flow Management (Gestión de Liquidez) ---
+            # Dinero total en el sistema (ingresos - retiros)
+            total_money_in_system = float(total_income - total_withdrawals)
+
+            # Reserva recomendada (10% del total)
+            recommended_reserve = total_money_in_system * 0.10
+            available_for_withdrawals = total_money_in_system - recommended_reserve
+
+            # Determinar salud del flujo de caja
+            if available_for_withdrawals > float(total_withdrawals) * 2:
+                cash_flow_health = "healthy"
+            elif available_for_withdrawals > float(total_withdrawals):
+                cash_flow_health = "warning"
+            else:
+                cash_flow_health = "critical"
+
+            response_data["financial_stats"]["cash_flow_management"] = {
+                "total_money_in_system": total_money_in_system,
+                "available_for_withdrawals": round(available_for_withdrawals, 2),
+                "reserved_money": round(recommended_reserve, 2),
+                "cash_flow_health": cash_flow_health,
+                "reserve_percentage": 10.0
+            }
+
+            # --- 3.3. Withdrawal Tracking (Seguimiento de Retiros) ---
+            # Retiros diarios
+            daily_withdrawals_query = select(
+                func.sum(Transaction.expense),
+                func.count(Transaction.id)
+            ).where(
+                Transaction.type == TransactionType.WITHDRAWAL,
+                Transaction.date >= func.date_sub(
+                    func.curdate(), text('INTERVAL 1 DAY'))
+            )
+            if driver_uuid:
+                daily_withdrawals_query = daily_withdrawals_query.where(
+                    Transaction.user_id == driver_uuid
+                )
+            daily_result = self.session.exec(daily_withdrawals_query).first()
+            daily_total = float(
+                daily_result[0]) if daily_result and daily_result[0] else 0
+            daily_count = daily_result[1] if daily_result and daily_result[1] else 0
+            daily_average = daily_total / daily_count if daily_count > 0 else 0
+
+            # Retiros semanales
+            weekly_withdrawals_query = select(
+                func.sum(Transaction.expense),
+                func.count(Transaction.id)
+            ).where(
+                Transaction.type == TransactionType.WITHDRAWAL,
+                Transaction.date >= func.date_sub(
+                    func.curdate(), text('INTERVAL 7 DAY'))
+            )
+            if driver_uuid:
+                weekly_withdrawals_query = weekly_withdrawals_query.where(
+                    Transaction.user_id == driver_uuid
+                )
+            weekly_result = self.session.exec(weekly_withdrawals_query).first()
+            weekly_total = float(
+                weekly_result[0]) if weekly_result and weekly_result[0] else 0
+            weekly_count = weekly_result[1] if weekly_result and weekly_result[1] else 0
+            weekly_average = weekly_total / weekly_count if weekly_count > 0 else 0
+
+            # Retiros quincenales
+            biweekly_withdrawals_query = select(
+                func.sum(Transaction.expense),
+                func.count(Transaction.id)
+            ).where(
+                Transaction.type == TransactionType.WITHDRAWAL,
+                Transaction.date >= func.date_sub(
+                    func.curdate(), text('INTERVAL 15 DAY'))
+            )
+            if driver_uuid:
+                biweekly_withdrawals_query = biweekly_withdrawals_query.where(
+                    Transaction.user_id == driver_uuid
+                )
+            biweekly_result = self.session.exec(
+                biweekly_withdrawals_query).first()
+            biweekly_total = float(
+                biweekly_result[0]) if biweekly_result and biweekly_result[0] else 0
+            biweekly_count = biweekly_result[1] if biweekly_result and biweekly_result[1] else 0
+            biweekly_average = biweekly_total / biweekly_count if biweekly_count > 0 else 0
+
+            # Retiros mensuales
+            monthly_withdrawals_query = select(
+                func.sum(Transaction.expense),
+                func.count(Transaction.id)
+            ).where(
+                Transaction.type == TransactionType.WITHDRAWAL,
+                Transaction.date >= func.date_sub(
+                    func.curdate(), text('INTERVAL 30 DAY'))
+            )
+            if driver_uuid:
+                monthly_withdrawals_query = monthly_withdrawals_query.where(
+                    Transaction.user_id == driver_uuid
+                )
+            monthly_result = self.session.exec(
+                monthly_withdrawals_query).first()
+            monthly_total = float(
+                monthly_result[0]) if monthly_result and monthly_result[0] else 0
+            monthly_count = monthly_result[1] if monthly_result and monthly_result[1] else 0
+            monthly_average = monthly_total / monthly_count if monthly_count > 0 else 0
+
+            # Calcular tendencias
+            def get_trend(current, previous):
+                if previous == 0:
+                    return "stable"
+                change = ((current - previous) / previous) * 100
+                if change > 10:
+                    return "increasing"
+                elif change < -10:
+                    return "decreasing"
+                else:
+                    return "stable"
+
+            daily_trend = get_trend(daily_total, weekly_total / 7)
+            weekly_trend = get_trend(weekly_total, biweekly_total / 2)
+            biweekly_trend = get_trend(biweekly_total, monthly_total / 2)
+            # Comparar con mes anterior
+            monthly_trend = get_trend(monthly_total, monthly_total)
+
+            response_data["financial_stats"]["withdrawal_tracking"] = {
+                "daily": {
+                    "total": daily_total,
+                    "count": daily_count,
+                    "average": round(daily_average, 2),
+                    "trend": daily_trend,
+                    "percentage_change": 0.0  # Simplificado por ahora
+                },
+                "weekly": {
+                    "total": weekly_total,
+                    "count": weekly_count,
+                    "average": round(weekly_average, 2),
+                    "trend": weekly_trend,
+                    "percentage_change": 0.0
+                },
+                "biweekly": {
+                    "total": biweekly_total,
+                    "count": biweekly_count,
+                    "average": round(biweekly_average, 2),
+                    "trend": biweekly_trend,
+                    "percentage_change": 0.0
+                },
+                "monthly": {
+                    "total": monthly_total,
+                    "count": monthly_count,
+                    "average": round(monthly_average, 2),
+                    "trend": monthly_trend,
+                    "percentage_change": 0.0
+                }
+            }
+
+            # --- 3.4. Liquidity Alerts (Alertas de Liquidez) ---
+            # Verificar si hay fondos suficientes
+            insufficient_funds = available_for_withdrawals < float(
+                total_withdrawals) * 0.5
+
+            # Verificar tasa de retiros alta
+            high_withdrawal_rate = float(daily_total) > (
+                total_money_in_system * 0.1)
+
+            # Verificar flujo de caja negativo
+            cash_flow_negative = float(total_withdrawals) > float(total_income)
+
+            # Verificar reservas agotadas
+            reserve_depleted = available_for_withdrawals < recommended_reserve
+
+            # Generar recomendaciones
+            recommendations = []
+            if insufficient_funds:
+                recommendations.append(
+                    "Fondos insuficientes para cubrir retiros pendientes")
+            if high_withdrawal_rate:
+                recommendations.append(
+                    "Tasa de retiros muy alta - monitorear de cerca")
+            if cash_flow_negative:
+                recommendations.append(
+                    "Flujo de caja negativo - revisar ingresos vs gastos")
+            if reserve_depleted:
+                recommendations.append(
+                    "Reservas agotadas - aumentar capital de trabajo")
+
+            if not recommendations:
+                recommendations.append(
+                    "Estado financiero saludable - mantener monitoreo regular")
+
+            response_data["financial_stats"]["liquidity_alerts"] = {
+                "insufficient_funds": insufficient_funds,
+                "high_withdrawal_rate": high_withdrawal_rate,
+                "cash_flow_negative": cash_flow_negative,
+                "reserve_depleted": reserve_depleted,
+                "recommendations": recommendations
             }
 
             # --- 4. Estadísticas de Suspensiones ---
