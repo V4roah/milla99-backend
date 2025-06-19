@@ -861,6 +861,191 @@ class StatisticsService:
                 }
             }
 
+            # --- 3.7. Drivers Analytics (Análisis Detallado de Conductores) ---
+            # Total de conductores registrados
+            total_drivers_query = select(func.count(User.id)).select_from(User).join(
+                UserHasRole, and_(
+                    User.id == UserHasRole.id_user,
+                    UserHasRole.id_rol == "DRIVER"
+                )
+            )
+            total_drivers = self.session.exec(total_drivers_query).first() or 0
+
+            # Conductores aprobados
+            approved_drivers_query = select(func.count(User.id)).select_from(User).join(
+                UserHasRole, and_(
+                    User.id == UserHasRole.id_user,
+                    UserHasRole.id_rol == "DRIVER",
+                    UserHasRole.status == RoleStatus.APPROVED
+                )
+            )
+            approved_drivers = self.session.exec(
+                approved_drivers_query).first() or 0
+
+            # Conductores pendientes de aprobación
+            pending_drivers_query = select(func.count(User.id)).select_from(User).join(
+                UserHasRole, and_(
+                    User.id == UserHasRole.id_user,
+                    UserHasRole.id_rol == "DRIVER",
+                    UserHasRole.status == RoleStatus.PENDING
+                )
+            )
+            pending_drivers = self.session.exec(
+                pending_drivers_query).first() or 0
+
+            # Conductores rechazados
+            rejected_drivers_query = select(func.count(User.id)).select_from(User).join(
+                UserHasRole, and_(
+                    User.id == UserHasRole.id_user,
+                    UserHasRole.id_rol == "DRIVER",
+                    UserHasRole.status == RoleStatus.REJECTED
+                )
+            )
+            rejected_drivers = self.session.exec(
+                rejected_drivers_query).first() or 0
+
+            # Conductores suspendidos
+            suspended_drivers_query = select(func.count(User.id)).select_from(User).join(
+                UserHasRole, and_(
+                    User.id == UserHasRole.id_user,
+                    UserHasRole.id_rol == "DRIVER",
+                    UserHasRole.suspension == True
+                )
+            )
+            suspended_drivers = self.session.exec(
+                suspended_drivers_query).first() or 0
+
+            # Conductores con documentos completos aprobados
+            fully_verified_drivers_query = select(func.count(func.distinct(User.id))).select_from(User).join(
+                UserHasRole, and_(
+                    User.id == UserHasRole.id_user,
+                    UserHasRole.id_rol == "DRIVER",
+                    UserHasRole.status == RoleStatus.APPROVED
+                )
+            ).join(
+                DriverInfo, User.id == DriverInfo.user_id
+            ).join(
+                DriverDocuments, and_(
+                    DriverInfo.id == DriverDocuments.driver_info_id,
+                    DriverDocuments.status == DriverStatus.APPROVED
+                )
+            ).join(
+                VehicleInfo, DriverInfo.id == VehicleInfo.driver_info_id
+            )
+            fully_verified_drivers = self.session.exec(
+                fully_verified_drivers_query).first() or 0
+
+            # Conductores activos (con viajes en los últimos 30 días)
+            active_drivers_30_days_query = select(func.count(func.distinct(ClientRequest.id_driver_assigned))).where(
+                ClientRequest.id_driver_assigned.is_not(None),
+                ClientRequest.created_at >= func.date_sub(
+                    func.curdate(), text('INTERVAL 30 DAY'))
+            )
+            active_drivers_30_days = self.session.exec(
+                active_drivers_30_days_query).first() or 0
+
+            # Conductores activos (con viajes en los últimos 7 días)
+            active_drivers_7_days_query = select(func.count(func.distinct(ClientRequest.id_driver_assigned))).where(
+                ClientRequest.id_driver_assigned.is_not(None),
+                ClientRequest.created_at >= func.date_sub(
+                    func.curdate(), text('INTERVAL 7 DAY'))
+            )
+            active_drivers_7_days = self.session.exec(
+                active_drivers_7_days_query).first() or 0
+
+            # Conductores nuevos este mes
+            new_drivers_this_month_query = select(func.count(User.id)).select_from(User).join(
+                UserHasRole, and_(
+                    User.id == UserHasRole.id_user,
+                    UserHasRole.id_rol == "DRIVER"
+                )
+            ).where(
+                User.created_at >= func.date_sub(
+                    func.curdate(), text('INTERVAL 30 DAY'))
+            )
+            new_drivers_this_month = self.session.exec(
+                new_drivers_this_month_query).first() or 0
+
+            # Conductores que dejaron de usar la plataforma (sin viajes en 30 días)
+            inactive_drivers_query = select(func.count(func.distinct(User.id))).select_from(User).join(
+                UserHasRole, and_(
+                    User.id == UserHasRole.id_user,
+                    UserHasRole.id_rol == "DRIVER",
+                    UserHasRole.status == RoleStatus.APPROVED
+                )
+            ).outerjoin(
+                ClientRequest, and_(
+                    User.id == ClientRequest.id_driver_assigned,
+                    ClientRequest.created_at >= func.date_sub(
+                        func.curdate(), text('INTERVAL 30 DAY'))
+                )
+            ).where(
+                ClientRequest.id_driver_assigned.is_(None)
+            )
+            inactive_drivers = self.session.exec(
+                inactive_drivers_query).first() or 0
+
+            # Calcular tasas
+            approval_rate = (approved_drivers / total_drivers *
+                             100) if total_drivers > 0 else 0
+            verification_rate = (
+                fully_verified_drivers / approved_drivers * 100) if approved_drivers > 0 else 0
+            activity_rate_30_days = (
+                active_drivers_30_days / approved_drivers * 100) if approved_drivers > 0 else 0
+            churn_rate = (inactive_drivers / approved_drivers *
+                          100) if approved_drivers > 0 else 0
+
+            response_data["drivers_analytics"] = {
+                "driver_counts": {
+                    # Total de conductores registrados
+                    "total_drivers": total_drivers,
+                    "approved_drivers": approved_drivers,                     # Conductores aprobados
+                    # Conductores pendientes de aprobación
+                    "pending_drivers": pending_drivers,
+                    "rejected_drivers": rejected_drivers,                     # Conductores rechazados
+                    # Conductores suspendidos
+                    "suspended_drivers": suspended_drivers,
+                    # Conductores completamente verificados
+                    "fully_verified_drivers": fully_verified_drivers,
+                    # Conductores nuevos este mes
+                    "new_drivers_this_month": new_drivers_this_month
+                },
+                "driver_activity": {
+                    # Activos en últimos 30 días
+                    "active_drivers_30_days": active_drivers_30_days,
+                    # Activos en últimos 7 días
+                    "active_drivers_7_days": active_drivers_7_days,
+                    # Inactivos (sin viajes en 30 días)
+                    "inactive_drivers": inactive_drivers,
+                    # % de conductores activos
+                    "activity_rate_30_days": round(activity_rate_30_days, 2)
+                },
+                "driver_rates": {
+                    # % de aprobación
+                    "approval_rate": round(approval_rate, 2),
+                    # % de verificación completa
+                    "verification_rate": round(verification_rate, 2),
+                    # % de conductores inactivos
+                    "churn_rate": round(churn_rate, 2)
+                },
+                "verification_status": {
+                    # Completamente verificados
+                    "fully_verified": fully_verified_drivers,
+                    # Parcialmente verificados
+                    "partially_verified": approved_drivers - fully_verified_drivers,
+                    "not_verified": total_drivers - approved_drivers          # No verificados
+                },
+                "summary": {
+                    "total_verified_drivers": fully_verified_drivers,         # Total verificados
+                    # % de verificación
+                    "verification_completion": round(verification_rate, 2),
+                    # % de retención
+                    "driver_retention": round(100 - churn_rate, 2),
+                    # % de crecimiento
+                    "growth_rate": round((new_drivers_this_month / total_drivers * 100), 2) if total_drivers > 0 else 0
+                }
+            }
+
             # --- 4. Estadísticas de Suspensiones ---
             suspended_drivers_stats = self.batch_check_all_suspended_drivers()
             response_data["suspended_drivers_stats"] = suspended_drivers_stats
