@@ -548,6 +548,141 @@ class StatisticsService:
                 "recommendations": recommendations
             }
 
+            # --- 3.5. Profitability Analysis (Análisis de Rentabilidad por Segmento) ---
+            # Rentabilidad por tipo de servicio
+            profitability_by_service_query = select(
+                TypeService.name,
+                func.sum(ClientRequest.fare_assigned).label('revenue'),
+                func.count(ClientRequest.id).label('trip_count')
+            ).join(
+                TypeService, ClientRequest.type_service_id == TypeService.id
+            ).where(
+                ClientRequest.status == StatusEnum.PAID
+            )
+
+            if service_type_id:
+                profitability_by_service_query = profitability_by_service_query.where(
+                    ClientRequest.type_service_id == service_type_id
+                )
+            if driver_uuid:
+                profitability_by_service_query = profitability_by_service_query.where(
+                    ClientRequest.id_driver_assigned == driver_uuid
+                )
+
+            profitability_by_service_query = self._build_date_filter(
+                profitability_by_service_query, start_date, end_date, ClientRequest.created_at
+            )
+            profitability_by_service_query = profitability_by_service_query.group_by(
+                TypeService.name)
+
+            service_profitability_results = self.session.exec(
+                profitability_by_service_query).all()
+
+            profit_margin_by_service_type = {}
+            for service_name, revenue, trip_count in service_profitability_results:
+                revenue = float(revenue) if revenue else 0
+
+                # Calcular costos basados en la distribución estándar
+                # 85% para conductores, 10% comisión plataforma, 1% ahorros, 4% empresa
+                driver_costs = revenue * 0.85  # 85% para conductores
+                platform_commission = revenue * 0.10  # 10% comisión
+                driver_savings = revenue * 0.01  # 1% ahorros
+                total_costs = driver_costs + platform_commission + driver_savings
+
+                profit = revenue - total_costs
+                margin_percentage = (profit / revenue *
+                                     100) if revenue > 0 else 0
+
+                profit_margin_by_service_type[service_name.lower().replace(' ', '_')] = {
+                    "revenue": revenue,
+                    "costs": round(total_costs, 2),
+                    "profit": round(profit, 2),
+                    "margin_percentage": round(margin_percentage, 2),
+                    "trip_count": trip_count,
+                    "average_revenue_per_trip": round(revenue / trip_count, 2) if trip_count > 0 else 0
+                }
+
+            # Rentabilidad por zona (usando pickup_description)
+            profitability_by_zone_query = select(
+                ClientRequest.pickup_description,
+                func.sum(ClientRequest.fare_assigned).label('revenue'),
+                func.count(ClientRequest.id).label('trip_count')
+            ).where(
+                ClientRequest.status == StatusEnum.PAID,
+                ClientRequest.pickup_description.is_not(None)
+            )
+
+            if service_type_id:
+                profitability_by_zone_query = profitability_by_zone_query.where(
+                    ClientRequest.type_service_id == service_type_id
+                )
+            if driver_uuid:
+                profitability_by_zone_query = profitability_by_zone_query.where(
+                    ClientRequest.id_driver_assigned == driver_uuid
+                )
+
+            profitability_by_zone_query = self._build_date_filter(
+                profitability_by_zone_query, start_date, end_date, ClientRequest.created_at
+            )
+            profitability_by_zone_query = profitability_by_zone_query.group_by(
+                ClientRequest.pickup_description)
+
+            zone_profitability_results = self.session.exec(
+                profitability_by_zone_query).all()
+
+            profit_margin_by_zone = {}
+            for zone_name, revenue, trip_count in zone_profitability_results:
+                if not zone_name:  # Saltar zonas sin nombre
+                    continue
+
+                revenue = float(revenue) if revenue else 0
+
+                # Calcular costos usando la misma distribución
+                driver_costs = revenue * 0.85
+                platform_commission = revenue * 0.10
+                driver_savings = revenue * 0.01
+                total_costs = driver_costs + platform_commission + driver_savings
+
+                profit = revenue - total_costs
+                margin_percentage = (profit / revenue *
+                                     100) if revenue > 0 else 0
+
+                # Normalizar nombre de zona
+                zone_key = zone_name.lower().replace(' ', '_').replace(',', '_').replace('.', '_')
+
+                profit_margin_by_zone[zone_key] = {
+                    "zone_name": zone_name,
+                    "revenue": revenue,
+                    "costs": round(total_costs, 2),
+                    "profit": round(profit, 2),
+                    "margin_percentage": round(margin_percentage, 2),
+                    "trip_count": trip_count,
+                    "average_revenue_per_trip": round(revenue / trip_count, 2) if trip_count > 0 else 0
+                }
+
+            # Resumen de rentabilidad general
+            total_revenue_all_services = sum(
+                item["revenue"] for item in profit_margin_by_service_type.values())
+            total_costs_all_services = sum(
+                item["costs"] for item in profit_margin_by_service_type.values())
+            total_profit_all_services = sum(
+                item["profit"] for item in profit_margin_by_service_type.values())
+            overall_margin = (total_profit_all_services / total_revenue_all_services *
+                              100) if total_revenue_all_services > 0 else 0
+
+            response_data["financial_stats"]["profitability_analysis"] = {
+                "profit_margin_by_service_type": profit_margin_by_service_type,
+                "profit_margin_by_zone": profit_margin_by_zone,
+                "overall_summary": {
+                    "total_revenue": total_revenue_all_services,
+                    "total_costs": round(total_costs_all_services, 2),
+                    "total_profit": round(total_profit_all_services, 2),
+                    "overall_margin_percentage": round(overall_margin, 2),
+                    "most_profitable_service": max(profit_margin_by_service_type.items(), key=lambda x: x[1]["margin_percentage"])[0] if profit_margin_by_service_type else None,
+                    "most_profitable_zone": max(profit_margin_by_zone.items(), key=lambda x: x[1]["margin_percentage"])[0] if profit_margin_by_zone else None
+                }
+            }
+
             # --- 4. Estadísticas de Suspensiones ---
             suspended_drivers_stats = self.batch_check_all_suspended_drivers()
             response_data["suspended_drivers_stats"] = suspended_drivers_stats
