@@ -27,27 +27,60 @@ def get_admin_statistics_summary(
         None, description="ID del conductor para filtrar estadísticas por conductor"),
 ):
     """
-    Obtiene un resumen de estadísticas administrativas con métricas críticas de liquidez y finanzas.
+    Obtiene un resumen completo de estadísticas administrativas con métricas críticas para la toma de decisiones.
 
-    - **`start_date`**: Fecha de inicio del período para las estadísticas.
-    - **`end_date`**: Fecha de fin del período para las estadísticas.
-    - **`service_type_id`**: Filtra las estadísticas por un tipo de servicio específico.
-    - **`driver_id`**: Filtra las estadísticas para un conductor específico.
+    **Parámetros:**
+    - **`start_date`**: Fecha de inicio del período para las estadísticas (YYYY-MM-DD)
+    - **`end_date`**: Fecha de fin del período para las estadísticas (YYYY-MM-DD)
+    - **`service_type_id`**: Filtra las estadísticas por un tipo de servicio específico
+    - **`driver_id`**: Filtra las estadísticas para un conductor específico
 
-    **Respuesta incluye:**
+    **Respuesta incluye las siguientes secciones:**
 
-    **Estadísticas Básicas:**
-    - Usuarios: conductores activos, documentos aprobados, vehículos registrados, clientes activos
-    - Servicios: completados, cancelados, tasa de cancelación, por tipo de servicio
+    **1. Estadísticas de Usuarios (`user_stats`):**
+    - Conductores activos, documentos aprobados, vehículos registrados
+    - Clientes activos únicos en el período
 
-    **Métricas Financieras Críticas:**
+    **2. Estadísticas de Servicios (`service_stats`):**
+    - Servicios completados y cancelados
+    - Tasa de cancelación y distribución por tipo de servicio
+
+    **3. Métricas Financieras Críticas (`financial_metrics`):**
     - **Revenue Breakdown**: Desglose detallado de ingresos (brutos, conductores, comisiones, referidos, ahorros)
     - **Cash Flow Management**: Gestión de liquidez (dinero total, disponible, reservado, salud financiera)
     - **Withdrawal Tracking**: Seguimiento de retiros (diario, semanal, quincenal, mensual con tendencias)
     - **Liquidity Alerts**: Alertas automáticas de liquidez y recomendaciones
 
-    **Estadísticas de Suspensiones:**
-    - Conductores suspendidos, suspensiones levantadas, detalles de estado
+    **4. Análisis de Rentabilidad (`profitability_analysis`):**
+    - **Rentabilidad por Tipo de Servicio**: Ingresos, costos, ganancias y márgenes por tipo
+    - **Rentabilidad por Zona**: Análisis geográfico de rentabilidad
+    - **Tendencias de Rentabilidad**: Comparación con períodos anteriores
+    - **KPIs de Rentabilidad**: Margen neto, ROI, punto de equilibrio
+
+    **5. Análisis por Tipo de Vehículo (`vehicle_analytics`):**
+    - **Conductores por Tipo**: Distribución de conductores por tipo de vehículo
+    - **Rendimiento por Tipo**: Ingresos, viajes, calificaciones por tipo de vehículo
+    - **Top Performers**: Mejores conductores por tipo de vehículo
+    - **Resumen Comparativo**: Análisis comparativo entre tipos de vehículo
+
+    **6. Drivers Analytics (`drivers_analytics`):**
+    - **Driver Counts**: Total, aprobados, pendientes, rechazados, suspendidos, verificados
+    - **Driver Activity**: Actividad en últimos 7 y 30 días, conductores inactivos
+    - **Driver Rates**: Tasas de aprobación, verificación y retención
+    - **Verification Status**: Estado de verificación (completa, parcial, no verificada)
+    - **Summary**: Métricas resumidas de crecimiento y retención
+
+    **7. Estadísticas de Suspensiones (`suspension_stats`):**
+    - Conductores suspendidos actualmente
+    - Suspensiones levantadas en el período
+    - Detalles de estado de suspensiones
+
+    **Casos de Uso:**
+    - **Gestión Financiera**: Monitoreo de liquidez y flujo de caja
+    - **Análisis de Rentabilidad**: Identificación de servicios y zonas más rentables
+    - **Gestión de Conductores**: Seguimiento de verificación, actividad y retención
+    - **Optimización de Flota**: Análisis por tipo de vehículo
+    - **Alertas Operacionales**: Detección temprana de problemas de liquidez
 
     **Nota:** Las métricas de liquidez son críticas para garantizar la operación continua del sistema.
     """
