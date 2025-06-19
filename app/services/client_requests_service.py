@@ -317,9 +317,11 @@ def get_client_requests_by_status_service(session: Session, status: str, user_id
     """
     Devuelve una lista de client_request filtrados por el estatus enviado en el parámetro y el user_id.
     Solo devuelve las solicitudes del usuario autenticado.
+    Incluye información del conductor asignado para el historial.
     """
     from app.models.client_request import ClientRequest
     from app.models.payment_method import PaymentMethod
+    from app.models.user import User
 
     # Obtener las solicitudes con sus métodos de pago
     results = session.query(ClientRequest).filter(
@@ -337,6 +339,19 @@ def get_client_requests_by_status_service(session: Session, status: str, user_id
                 payment_methods[cr.payment_method_id] = {
                     "id": pm.id,
                     "name": pm.name
+                }
+
+    # Crear un diccionario de conductores para evitar múltiples consultas
+    drivers = {}
+    for cr in results:
+        if cr.id_driver_assigned and cr.id_driver_assigned not in drivers:
+            driver = session.query(User).filter(
+                User.id == cr.id_driver_assigned).first()
+            if driver:
+                drivers[cr.id_driver_assigned] = {
+                    "id": str(driver.id),
+                    "full_name": driver.full_name,
+                    "selfie_url": driver.selfie_url
                 }
 
     # Construir la respuesta
@@ -357,20 +372,39 @@ def get_client_requests_by_status_service(session: Session, status: str, user_id
             "created_at": cr.created_at.isoformat(),
             "updated_at": cr.updated_at.isoformat(),
             "review": cr.review,
-            "payment_method": payment_methods.get(cr.payment_method_id) if cr.payment_method_id else None
+            "payment_method": payment_methods.get(cr.payment_method_id) if cr.payment_method_id else None,
+            "driver": drivers.get(cr.id_driver_assigned) if cr.id_driver_assigned else None
         }
         for cr in results
     ]
 
 
 def get_driver_requests_by_status_service(session: Session, id_driver_assigned: str, status: str):
+    """
+    Devuelve una lista de solicitudes de viaje asociadas a un conductor filtradas por el estado.
+    Incluye información del cliente para el historial del conductor.
+    """
     from app.models.client_request import ClientRequest
+    from app.models.user import User
 
     # Consulta las solicitudes
     results = session.query(ClientRequest).filter(
         ClientRequest.id_driver_assigned == id_driver_assigned,
         ClientRequest.status == status
     ).all()
+
+    # Crear un diccionario de clientes para evitar múltiples consultas
+    clients = {}
+    for cr in results:
+        if cr.id_client and cr.id_client not in clients:
+            client = session.query(User).filter(
+                User.id == cr.id_client).first()
+            if client:
+                clients[cr.id_client] = {
+                    "id": str(client.id),
+                    "full_name": client.full_name,
+                    "selfie_url": client.selfie_url
+                }
 
     # Construir la respuesta con conversión de campos geoespaciales
     return [
@@ -389,7 +423,8 @@ def get_driver_requests_by_status_service(session: Session, id_driver_assigned: 
             "destination_position": wkb_to_coords(cr.destination_position),
             "created_at": cr.created_at.isoformat(),
             "updated_at": cr.updated_at.isoformat(),
-            "review": cr.review
+            "review": cr.review,
+            "client": clients.get(cr.id_client) if cr.id_client else None
         }
         for cr in results
     ]

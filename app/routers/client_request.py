@@ -241,6 +241,7 @@ Devuelve una lista de solicitudes de viaje del usuario autenticado filtradas por
 
 **Respuesta:**
 Devuelve una lista de solicitudes de viaje del usuario autenticado con el estado especificado.
+Incluye información del conductor asignado (nombre y selfie) para el historial de viajes.
 """)
 def get_client_requests_by_status(
     request: Request,
@@ -278,6 +279,7 @@ Devuelve una lista de solicitudes de viaje asociadas a un conductor filtradas po
             
 **Respuesta:**
 Devuelve una lista de solicitudes de viaje asociadas al conductor con el estado especificado.
+Incluye información del cliente (nombre y selfie) para el historial de viajes del conductor.
 """)
 def get_driver_requests_by_status(
     request: Request,
