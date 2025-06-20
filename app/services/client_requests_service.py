@@ -22,7 +22,7 @@ import traceback
 from app.utils.geo_utils import wkb_to_coords
 from app.models.type_service import TypeService
 from uuid import UUID
-from typing import Dict, Set
+from typing import Dict, Set, Optional
 from app.models.payment_method import PaymentMethod
 from app.services.transaction_service import TransactionService
 from app.models.transaction import TransactionType
@@ -69,6 +69,46 @@ def get_time_and_distance_service(origin_lat, origin_lng, destination_lat, desti
         raise HTTPException(status_code=status.HTTP_200_OK,
                             detail=f"Error en la respuesta del API de Google Distance Matrix: {data.get('status')}")
     return data
+
+
+def get_address_from_coords(lat: float, lng: float) -> Optional[str]:
+    """
+    Obtiene una dirección legible a partir de coordenadas de latitud y longitud
+    utilizando la API de Geocodificación Inversa de Google.
+    """
+    if not lat or not lng:
+        return None
+
+    url = "https://maps.googleapis.com/maps/api/geocode/json"
+    params = {
+        "latlng": f"{lat},{lng}",
+        "key": settings.GOOGLE_API_KEY,
+        "language": "es"  # Para obtener resultados en español
+    }
+
+    try:
+        response = requests.get(url, params=params)
+        # Lanza una excepción para errores HTTP (4xx o 5xx)
+        response.raise_for_status()
+        data = response.json()
+
+        if data.get("status") == "OK" and data.get("results"):
+            # Devolvemos la primera dirección formateada que usualmente es la más precisa
+            return data["results"][0].get("formatted_address")
+        else:
+            # Manejar casos donde Google no devuelve resultados o reporta un error
+            print(
+                f"Error de Geocoding API: {data.get('status')}, {data.get('error_message')}")
+            return "Dirección no encontrada"
+
+    except requests.exceptions.RequestException as e:
+        # Manejar errores de red o HTTP
+        print(f"Error de red al consultar Google Geocoding API: {e}")
+        return "Error al obtener dirección"
+    except Exception as e:
+        # Manejar otros errores inesperados
+        print(f"Error inesperado en get_address_from_coords: {e}")
+        return "Error al procesar dirección"
 
 
 def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session, wkb_to_coords, type_service_ids=None):
@@ -355,8 +395,18 @@ def get_client_requests_by_status_service(session: Session, status: str, user_id
                 }
 
     # Construir la respuesta
-    return [
-        {
+    response_list = []
+    for cr in results:
+        pickup_coords = wkb_to_coords(cr.pickup_position)
+        destination_coords = wkb_to_coords(cr.destination_position)
+
+        # Obtener direcciones desde coordenadas
+        pickup_address = get_address_from_coords(
+            pickup_coords['lat'], pickup_coords['lng']) if pickup_coords else "No disponible"
+        destination_address = get_address_from_coords(
+            destination_coords['lat'], destination_coords['lng']) if destination_coords else "No disponible"
+
+        response_list.append({
             "id": cr.id,
             "id_client": cr.id_client,
             "id_driver_assigned": cr.id_driver_assigned,
@@ -367,16 +417,17 @@ def get_client_requests_by_status_service(session: Session, status: str, user_id
             "client_rating": cr.client_rating,
             "driver_rating": cr.driver_rating,
             "status": str(cr.status),
-            "pickup_position": wkb_to_coords(cr.pickup_position),
-            "destination_position": wkb_to_coords(cr.destination_position),
+            "pickup_position": pickup_coords,
+            "destination_position": destination_coords,
+            "pickup_address": pickup_address,
+            "destination_address": destination_address,
             "created_at": cr.created_at.isoformat(),
             "updated_at": cr.updated_at.isoformat(),
             "review": cr.review,
             "payment_method": payment_methods.get(cr.payment_method_id) if cr.payment_method_id else None,
             "driver": drivers.get(cr.id_driver_assigned) if cr.id_driver_assigned else None
-        }
-        for cr in results
-    ]
+        })
+    return response_list
 
 
 def get_driver_requests_by_status_service(session: Session, id_driver_assigned: str, status: str):
@@ -407,8 +458,18 @@ def get_driver_requests_by_status_service(session: Session, id_driver_assigned: 
                 }
 
     # Construir la respuesta con conversión de campos geoespaciales
-    return [
-        {
+    response_list = []
+    for cr in results:
+        pickup_coords = wkb_to_coords(cr.pickup_position)
+        destination_coords = wkb_to_coords(cr.destination_position)
+
+        # Obtener direcciones desde coordenadas
+        pickup_address = get_address_from_coords(
+            pickup_coords['lat'], pickup_coords['lng']) if pickup_coords else "No disponible"
+        destination_address = get_address_from_coords(
+            destination_coords['lat'], destination_coords['lng']) if destination_coords else "No disponible"
+
+        response_list.append({
             "id": cr.id,
             "id_client": cr.id_client,
             "id_driver_assigned": cr.id_driver_assigned,
@@ -419,15 +480,16 @@ def get_driver_requests_by_status_service(session: Session, id_driver_assigned: 
             "client_rating": cr.client_rating,
             "driver_rating": cr.driver_rating,
             "status": str(cr.status),
-            "pickup_position": wkb_to_coords(cr.pickup_position),
-            "destination_position": wkb_to_coords(cr.destination_position),
+            "pickup_position": pickup_coords,
+            "destination_position": destination_coords,
+            "pickup_address": pickup_address,
+            "destination_address": destination_address,
             "created_at": cr.created_at.isoformat(),
             "updated_at": cr.updated_at.isoformat(),
             "review": cr.review,
             "client": clients.get(cr.id_client) if cr.id_client else None
-        }
-        for cr in results
-    ]
+        })
+    return response_list
 
 
 def update_client_rating_service(session: Session, id_client_request: UUID, client_rating: float, user_id: UUID):
