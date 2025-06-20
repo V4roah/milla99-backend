@@ -8,6 +8,7 @@ from app.models.driver_info import DriverInfo
 from app.models.vehicle_info import VehicleInfo
 from app.models.driver_trip_offer import DriverTripOfferResponse
 from app.models.driver_response import UserResponse, DriverInfoResponse, VehicleInfoResponse
+from app.models.driver_position import DriverPosition
 from sqlalchemy.orm import selectinload
 from sqlalchemy import func
 from datetime import datetime
@@ -46,39 +47,61 @@ class DriverTripOfferService:
         self.session = session
 
     def create_offer(self, data: dict) -> DriverTripOffer:
+        print(f"\n=== DEBUG CREATE_OFFER ===")
+        print(f"Datos recibidos: {data}")
+
         # Validar que el driver exista y tenga el rol DRIVER
         user = self.session.get(User, data["id_driver"])
+        print(f"Usuario encontrado: {user is not None}")
         if not user:
+            print(
+                f"ERROR: Conductor no encontrado con ID: {data['id_driver']}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Conductor no encontrado")
+
         driver_role = self.session.exec(
             select(UserHasRole).where(
                 UserHasRole.id_user == data["id_driver"],
                 UserHasRole.id_rol == "DRIVER"
             )
         ).first()
+        print(f"Rol de conductor encontrado: {driver_role is not None}")
         if not driver_role:
+            print(f"ERROR: Usuario {data['id_driver']} no tiene rol DRIVER")
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                                 detail="El usuario no tiene el rol de conductor")
 
         # Validar que la solicitud exista y esté en estado CREATED
         client_request = self.session.get(
             ClientRequest, data["id_client_request"])
+        print(f"Client request encontrada: {client_request is not None}")
         if not client_request:
+            print(
+                f"ERROR: Client request no encontrada con ID: {data['id_client_request']}")
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                                 detail="Solicitud de cliente no encontrada")
+
+        print(f"Estado de client request: {client_request.status}")
         if client_request.status != StatusEnum.CREATED:
+            print(
+                f"ERROR: Client request no está en estado CREATED, está en: {client_request.status}")
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                                 detail="La solicitud no está en estado CREATED")
 
         # Validar que el precio ofrecido no sea menor al precio base
+        print(f"Fare offered en client request: {client_request.fare_offered}")
+        print(f"Fare offer en data: {data.get('fare_offer')}")
+
         if client_request.fare_offered is None:
+            print(f"ERROR: Client request no tiene fare_offered definido")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="La solicitud de cliente no tiene un precio base definido"
             )
 
         if float(data["fare_offer"]) < float(client_request.fare_offered):
+            print(
+                f"ERROR: Oferta {data['fare_offer']} es menor que precio base {client_request.fare_offered}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="La oferta debe ser mayor o igual al precio base"
@@ -91,16 +114,58 @@ class DriverTripOfferService:
                 DriverTripOffer.id_driver == data["id_driver"]
             )
         ).first()
+        print(f"Oferta existente encontrada: {existing_offer is not None}")
         if existing_offer:
+            print(
+                f"ERROR: Ya existe una oferta del conductor {data['id_driver']} para la solicitud {data['id_client_request']}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Ya existe una oferta para esta solicitud"
             )
 
+        print(f"Todas las validaciones pasaron, creando oferta...")
+
+        # Obtener la posición actual del conductor
+        driver_position = self.session.query(DriverPosition).filter(
+            DriverPosition.id_driver == data["id_driver"]
+        ).first()
+
+        # Obtener coordenadas del punto de recogida
+        pickup_coords = wkb_to_coords(client_request.pickup_position)
+
+        # Calcular distancia y tiempo desde el conductor hasta el punto de recogida
+        if driver_position and driver_position.position:
+            driver_coords = wkb_to_coords(driver_position.position)
+
+            # Calcular usando Google Maps API
+            distance_to_pickup, time_to_pickup = get_time_and_distance_from_google(
+                # Posición del conductor
+                driver_coords['lat'], driver_coords['lng'],
+                # Punto de recogida
+                pickup_coords['lat'], pickup_coords['lng']
+            )
+
+            # Convertir tiempo de segundos a minutos
+            time_to_pickup_minutes = (
+                time_to_pickup / 60) if time_to_pickup is not None else 0
+
+            # Actualizar los datos con los valores calculados
+            data["time"] = time_to_pickup_minutes if time_to_pickup_minutes > 0 else data.get(
+                "time", 0)
+            data["distance"] = distance_to_pickup if distance_to_pickup is not None else data.get(
+                "distance", 0)
+
+            print(f"Distancia calculada: {data['distance']} metros")
+            print(f"Tiempo calculado: {data['time']} minutos")
+        else:
+            print(
+                f"WARNING: No se encontró posición del conductor, usando valores por defecto")
+
         offer = DriverTripOffer(**data)
         self.session.add(offer)
         self.session.commit()
         self.session.refresh(offer)
+        print(f"Oferta creada exitosamente con ID: {offer.id}")
         return offer
 
     def get_offers_by_client_request(self, id_client_request: UUID, user_id: UUID, user_role: str):
@@ -115,15 +180,8 @@ class DriverTripOfferService:
         ).all()
         result = []
 
+        # Obtener coordenadas del punto de recogida del cliente
         pickup_coords = wkb_to_coords(client_request.pickup_position)
-        destination_coords = wkb_to_coords(client_request.destination_position)
-
-        distance_fallback, time_fallback = get_time_and_distance_from_google(
-            pickup_coords['lat'], pickup_coords['lng'],
-            destination_coords['lat'], destination_coords['lng']
-        )
-        time_fallback_minutes = (
-            time_fallback / 60) if time_fallback is not None else 0
 
         for offer in offers:
             user = self.session.query(User).options(
@@ -163,8 +221,34 @@ class DriverTripOfferService:
             average_rating = get_average_rating(
                 self.session, "driver", user.id) if user else 0.0
 
-            time_to_return = offer.time if offer.time else time_fallback_minutes
-            distance_to_return = offer.distance if offer.distance else distance_fallback
+            # Obtener la posición actual del conductor
+            driver_position = self.session.query(DriverPosition).filter(
+                DriverPosition.id_driver == offer.id_driver
+            ).first()
+
+            # Calcular distancia y tiempo desde el conductor hasta el punto de recogida
+            if driver_position and driver_position.position:
+                driver_coords = wkb_to_coords(driver_position.position)
+
+                # Calcular distancia y tiempo usando Google Maps API
+                distance_to_pickup, time_to_pickup = get_time_and_distance_from_google(
+                    # Posición del conductor
+                    driver_coords['lat'], driver_coords['lng'],
+                    # Punto de recogida
+                    pickup_coords['lat'], pickup_coords['lng']
+                )
+
+                # Convertir tiempo de segundos a minutos
+                time_to_pickup_minutes = (
+                    time_to_pickup / 60) if time_to_pickup is not None else 0
+
+                # Usar los valores calculados o los valores guardados en la oferta como fallback
+                time_to_return = time_to_pickup_minutes if time_to_pickup_minutes > 0 else offer.time
+                distance_to_return = distance_to_pickup if distance_to_pickup is not None else offer.distance
+            else:
+                # Si no hay posición del conductor, usar los valores guardados en la oferta
+                time_to_return = offer.time
+                distance_to_return = offer.distance
 
             result.append(DriverTripOfferResponse(
                 id=offer.id,
