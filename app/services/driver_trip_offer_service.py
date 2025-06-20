@@ -12,6 +12,33 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy import func
 from datetime import datetime
 from uuid import UUID
+import requests
+from app.core.config import settings
+from app.utils.geo_utils import wkb_to_coords
+
+
+def get_time_and_distance_from_google(origin_lat, origin_lng, destination_lat, destination_lng):
+    """Llama a la API de Google Distance Matrix para obtener tiempo y distancia."""
+    url = "https://maps.googleapis.com/maps/api/distancematrix/json"
+    params = {
+        "origins": f"{origin_lat},{origin_lng}",
+        "destinations": f"{destination_lat},{destination_lng}",
+        "units": "metric",
+        "key": settings.GOOGLE_API_KEY
+    }
+    try:
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+        data = response.json()
+        if data.get("status") == "OK" and data["rows"][0]["elements"][0]["status"] == "OK":
+            distance = data["rows"][0]["elements"][0]["distance"]["value"]
+            duration = data["rows"][0]["elements"][0]["duration"]["value"]
+            return distance, duration
+        else:
+            return None, None
+    except requests.exceptions.RequestException as e:
+        print(f"Error al llamar a Google Maps API: {e}")
+        return None, None
 
 
 class DriverTripOfferService:
@@ -45,6 +72,12 @@ class DriverTripOfferService:
                                 detail="La solicitud no está en estado CREATED")
 
         # Validar que el precio ofrecido no sea menor al precio base
+        if client_request.fare_offered is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La solicitud de cliente no tiene un precio base definido"
+            )
+
         if float(data["fare_offer"]) < float(client_request.fare_offered):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -71,10 +104,27 @@ class DriverTripOfferService:
         return offer
 
     def get_offers_by_client_request(self, id_client_request: UUID, user_id: UUID, user_role: str):
+        client_request = self.session.query(ClientRequest).filter(
+            ClientRequest.id == id_client_request).first()
+        if not client_request:
+            raise HTTPException(
+                status_code=404, detail="Solicitud de cliente no encontrada")
+
         offers = self.session.query(DriverTripOffer).filter(
             DriverTripOffer.id_client_request == id_client_request
         ).all()
         result = []
+
+        pickup_coords = wkb_to_coords(client_request.pickup_position)
+        destination_coords = wkb_to_coords(client_request.destination_position)
+
+        distance_fallback, time_fallback = get_time_and_distance_from_google(
+            pickup_coords['lat'], pickup_coords['lng'],
+            destination_coords['lat'], destination_coords['lng']
+        )
+        time_fallback_minutes = (
+            time_fallback / 60) if time_fallback is not None else 0
+
         for offer in offers:
             user = self.session.query(User).options(
                 selectinload(User.driver_info).selectinload(
@@ -113,11 +163,14 @@ class DriverTripOfferService:
             average_rating = get_average_rating(
                 self.session, "driver", user.id) if user else 0.0
 
+            time_to_return = offer.time if offer.time else time_fallback_minutes
+            distance_to_return = offer.distance if offer.distance else distance_fallback
+
             result.append(DriverTripOfferResponse(
                 id=offer.id,
                 fare_offer=offer.fare_offer,
-                time=offer.time,
-                distance=offer.distance,
+                time=time_to_return,
+                distance=distance_to_return,
                 created_at=str(offer.created_at),
                 updated_at=str(offer.updated_at),
                 user=user_response,
@@ -125,14 +178,6 @@ class DriverTripOfferService:
                 vehicle_info=vehicle_info_response,
                 average_rating=average_rating
             ))
-
-        # Filtrado según el rol
-        from app.models.client_request import ClientRequest
-        client_request = self.session.query(ClientRequest).filter(
-            ClientRequest.id == id_client_request).first()
-        if not client_request:
-            raise HTTPException(
-                status_code=404, detail="Solicitud de cliente no encontrada")
 
         if user_role == "DRIVER":
             # Solo ve su propia oferta

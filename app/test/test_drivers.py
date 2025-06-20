@@ -439,38 +439,50 @@ def test_sql_injection_on_create_driver(client):
 
 
 def create_and_approve_driver(client, phone_number, country_code):
-    # Usar una sesión explícita para el test
     from app.core.db import engine
-    from sqlmodel import Session
+    from sqlmodel import Session, select
+    from app.models.user import User
     from app.models.user_has_roles import UserHasRole, RoleStatus
-    from sqlmodel import select
     from uuid import UUID
 
+    driver_id = None
+
     with Session(engine) as session:
-        try:
+        user = session.exec(select(User).where(
+            User.phone_number == phone_number)).first()
+
+        if user:
+            # Si el usuario ya existe (viene de init_data), solo lo aprobamos
+            driver_id = user.id
+            driver_role = session.exec(select(UserHasRole).where(
+                UserHasRole.id_user == driver_id, UserHasRole.id_rol == "DRIVER")).first()
+            if not driver_role:
+                raise Exception(
+                    f"El usuario {phone_number} existe pero no tiene el rol de DRIVER.")
+
+            if driver_role.status != RoleStatus.APPROVED:
+                driver_role.status = RoleStatus.APPROVED
+                session.add(driver_role)
+                session.commit()
+        else:
+            # Si el usuario no existe, lo creamos desde cero
             user_data = {
-                "full_name": "Driver Test",
+                "full_name": f"Driver Test {phone_number}",
                 "country_code": country_code,
                 "phone_number": phone_number
             }
             driver_info_data = {
-                "first_name": "Driver",
-                "last_name": "Test",
-                "birth_date": str(date(1990, 1, 1)),
-                "email": "driver.test@example.com"
+                "first_name": "Driver", "last_name": "Test", "birth_date": str(
+                    date(1990, 1, 1)), "email": f"driver.test.{phone_number}@example.com"
             }
             vehicle_info_data = {
-                "brand": "Toyota",
-                "model": "Corolla",
-                "model_year": 2020,
-                "color": "Blanco",
-                "plate": "ABC123",
-                "vehicle_type_id": 1
+                "brand": "Toyota", "model": "Corolla", "model_year": 2020, "color": "Blanco", "plate": f"TEST{phone_number[-4:]}", "vehicle_type_id": 1
             }
             driver_documents_data = {
                 "license_expiration_date": str(date(2026, 1, 1)),
                 "soat_expiration_date": str(date(2025, 12, 31)),
-                "vehicle_technical_inspection_expiration_date": str(date(2025, 12, 31))
+                "vehicle_technical_inspection_expiration_date": str(
+                    date(2025, 12, 31))
             }
             files = {
                 "selfie": ("selfie.jpg", io.BytesIO(b"fake-selfie-data"), "image/jpeg"),
@@ -481,48 +493,39 @@ def create_and_approve_driver(client, phone_number, country_code):
                 "soat": ("soat.jpg", io.BytesIO(b"fake-soat"), "image/jpeg"),
                 "vehicle_technical_inspection": ("tech.jpg", io.BytesIO(b"fake-tech"), "image/jpeg")
             }
-            data = {
+            data_parts = {
                 "user": json.dumps(user_data),
                 "driver_info": json.dumps(driver_info_data),
                 "vehicle_info": json.dumps(vehicle_info_data),
                 "driver_documents": json.dumps(driver_documents_data)
             }
-            response = client.post("/drivers/", data=data, files=files)
+
+            response = client.post("/drivers/", data=data_parts, files=files)
+
+            if response.status_code != status.HTTP_201_CREATED:
+                print(
+                    f"Error creando conductor ({phone_number}): {response.text}")
             assert response.status_code == status.HTTP_201_CREATED
             driver_data = response.json()
-            driver_id = driver_data["user"]["id"]
+            driver_id = UUID(driver_data["user"]["id"])
 
-            # Enviar código de verificación
-            send_resp = client.post(
-                f"/auth/verify/{country_code}/{phone_number}/send")
-            assert send_resp.status_code == 201
-            code = send_resp.json()["message"].split()[-1]
-
-            # Verificar el código y obtener el token
-            verify_resp = client.post(
-                f"/auth/verify/{country_code}/{phone_number}/code",
-                json={"code": code}
-            )
-            assert verify_resp.status_code == 200
-            response_data = verify_resp.json()
-
-            # Aprobar el rol del conductor
-            driver_role = session.exec(
-                select(UserHasRole).where(
-                    UserHasRole.id_user == UUID(str(driver_id)),
-                    UserHasRole.id_rol == "DRIVER"
-                )
-            ).first()
+            driver_role = session.exec(select(UserHasRole).where(
+                UserHasRole.id_user == driver_id, UserHasRole.id_rol == "DRIVER")).first()
             assert driver_role is not None
             driver_role.status = RoleStatus.APPROVED
             session.add(driver_role)
             session.commit()
-            session.refresh(driver_role)
 
-            return response_data["access_token"], driver_id
+    # Autenticar al conductor para obtener el token
+    send_resp = client.post(f"/auth/verify/{country_code}/{phone_number}/send")
+    assert send_resp.status_code == 201, f"Falló al enviar código a {phone_number}: {send_resp.text}"
 
-        except Exception as e:
-            print(f"Error en create_and_approve_driver: {str(e)}")
-            raise
-        finally:
-            session.close()
+    code = send_resp.json()["message"].split()[-1]
+
+    verify_resp = client.post(
+        f"/auth/verify/{country_code}/{phone_number}/code", json={"code": code})
+    assert verify_resp.status_code == 200, f"Falló al verificar código para {phone_number}: {verify_resp.text}"
+
+    response_data = verify_resp.json()
+
+    return response_data["access_token"], str(driver_id)

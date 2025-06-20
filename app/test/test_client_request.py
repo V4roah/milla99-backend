@@ -1847,3 +1847,90 @@ def test_offer_validation():
         "detail"]
 
     print("\n=== TEST DE VALIDACIONES DE OFERTAS COMPLETADO EXITOSAMENTE ===")
+
+
+def test_get_offers_with_calculated_time_and_distance(client):
+    """
+    Prueba el flujo completo:
+    1. Cliente crea una solicitud de viaje.
+    2. Conductor crea una oferta para esa solicitud.
+    3. Cliente consulta las ofertas y verifica que time y distance se calculan.
+    """
+    # === PASO 1: Usar un cliente existente de init_data y autenticarlo ===
+    client_phone = "3004444456"  # Usar un número de init_data.py
+    client_country_code = "+57"
+    send_resp = client.post(
+        f"/auth/verify/{client_country_code}/{client_phone}/send")
+    assert send_resp.status_code == 201
+    code = send_resp.json()["message"].split()[-1]
+    verify_resp = client.post(
+        f"/auth/verify/{client_country_code}/{client_phone}/code",
+        json={"code": code}
+    )
+    assert verify_resp.status_code == 200
+    client_token = verify_resp.json()["access_token"]
+    client_headers = {"Authorization": f"Bearer {client_token}"}
+    assert client_token
+
+    # === PASO 2: Cliente crea una solicitud de viaje ===
+    request_payload = {
+        "fare_offered": 20000,  # Agregar el precio base
+        "pickup_lat": 4.6587,
+        "pickup_lng": -74.0538,
+        "destination_lat": 4.6739,
+        "destination_lng": -74.053,
+        "type_service_id": 1,
+        "payment_method_id": 1
+    }
+    response = client.post(
+        "/client-request/",
+        headers=client_headers,
+        json=request_payload
+    )
+    assert response.status_code == 201
+    client_request_data = response.json()
+    client_request_id = client_request_data["id"]
+    assert client_request_id
+
+    # === PASO 3: Usar un conductor existente y aprobado de init_data.py ===
+    driver_phone = "3009999999"  # Conductor existente y aprobado en init_data
+    driver_country_code = "+57"
+    driver_token, _ = create_and_approve_driver(
+        client, driver_phone, driver_country_code)
+    driver_headers = {"Authorization": f"Bearer {driver_token}"}
+    assert driver_token
+
+    # === PASO 4: Conductor crea una oferta para el viaje ===
+    offer_payload = {
+        "id_client_request": client_request_id,
+        "fare_offer": 20000,
+        "time": 0,  # Enviamos 0 para forzar el cálculo en el backend
+        "distance": 0
+    }
+    response = client.post(
+        "/driver-trip-offers/",
+        headers=driver_headers,
+        json=offer_payload
+    )
+    assert response.status_code == 201
+
+    # === PASO 5: Cliente consulta las ofertas del viaje ===
+    response = client.get(
+        f"/driver-trip-offers/by-client-request/{client_request_id}",
+        headers=client_headers
+    )
+    assert response.status_code == 200
+
+    # === PASO 6: Verificar que 'time' y 'distance' son mayores a 0 ===
+    offers = response.json()
+    assert isinstance(offers, list)
+    assert len(offers) > 0
+
+    first_offer = offers[0]
+    assert "time" in first_offer
+    assert "distance" in first_offer
+    assert first_offer["time"] > 0
+    assert first_offer["distance"] > 0
+
+    print(
+        f"\n[SUCCESS] Test exitoso: La oferta devolvió time={first_offer['time']} y distance={first_offer['distance']}")
