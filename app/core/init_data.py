@@ -878,12 +878,17 @@ def init_referral_data(session: Session, users):
 def create_driver_positions(session: Session, drivers):
     """Crear posiciones de conductores"""
     driver_positions = {
-        "3009999999": {"lat": 4.708822, "lng": -74.076542},  # demo_driver
-        "3148780278": {"lat": 4.712345, "lng": -74.078901},  # prueba_conductor
-        "3005555555": {"lat": 4.715678, "lng": -74.081234},  # Roberto
-        "3006666666": {"lat": 4.719012, "lng": -74.083567},  # Laura
-        "3007777777": {"lat": 4.722345, "lng": -74.085890},  # Pedro
-        "3008888888": {"lat": 4.725678, "lng": -74.088123},  # Sofía
+        # demo_driver - Suba
+        "3009999999": {"lat": 4.708822, "lng": -74.076542},
+        # prueba_conductor - Suba Norte
+        "3148780278": {"lat": 4.712345, "lng": -74.078901},
+        # Roberto - Suba Centro
+        "3005555555": {"lat": 4.715678, "lng": -74.081234},
+        "3006666666": {"lat": 4.719012, "lng": -74.083567},  # Laura - Suba Sur
+        "3007777777": {"lat": 4.722345, "lng": -74.085890},  # Pedro - Engativá
+        "3008888888": {"lat": 4.725678, "lng": -74.088123},  # Sofía - Fontibón
+        # Driver Docs Complete - Fontibón Norte
+        "3001234567": {"lat": 4.730000, "lng": -74.090000},
     }
 
     for driver in drivers:

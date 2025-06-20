@@ -149,17 +149,23 @@ class DriverTripOfferService:
             time_to_pickup_minutes = (
                 time_to_pickup / 60) if time_to_pickup is not None else 0
 
-            # Actualizar los datos con los valores calculados
-            data["time"] = time_to_pickup_minutes if time_to_pickup_minutes > 0 else data.get(
+            # Usar los valores calculados o los valores guardados en la oferta como fallback
+            time_to_return = time_to_pickup_minutes if time_to_pickup_minutes > 0 else data.get(
                 "time", 0)
-            data["distance"] = distance_to_pickup if distance_to_pickup is not None else data.get(
+            distance_to_return = distance_to_pickup if distance_to_pickup is not None else data.get(
                 "distance", 0)
 
-            print(f"Distancia calculada: {data['distance']} metros")
-            print(f"Tiempo calculado: {data['time']} minutos")
-        else:
             print(
-                f"WARNING: No se encontró posición del conductor, usando valores por defecto")
+                f"DEBUG: Conductor {data['id_driver']} - Distancia calculada: {distance_to_return}m, Tiempo: {time_to_return}min")
+        else:
+            # Si no hay posición del conductor, usar los valores guardados en la oferta
+            time_to_return = data.get("time", 0)
+            distance_to_return = data.get("distance", 0)
+            print(
+                f"WARNING: Conductor {data['id_driver']} no tiene posición definida, usando valores guardados: {distance_to_return}m, {time_to_return}min")
+
+        data["time"] = time_to_return
+        data["distance"] = distance_to_return
 
         offer = DriverTripOffer(**data)
         self.session.add(offer)
@@ -230,7 +236,7 @@ class DriverTripOfferService:
             if driver_position and driver_position.position:
                 driver_coords = wkb_to_coords(driver_position.position)
 
-                # Calcular distancia y tiempo usando Google Maps API
+                # Calcular usando Google Maps API
                 distance_to_pickup, time_to_pickup = get_time_and_distance_from_google(
                     # Posición del conductor
                     driver_coords['lat'], driver_coords['lng'],
@@ -245,10 +251,15 @@ class DriverTripOfferService:
                 # Usar los valores calculados o los valores guardados en la oferta como fallback
                 time_to_return = time_to_pickup_minutes if time_to_pickup_minutes > 0 else offer.time
                 distance_to_return = distance_to_pickup if distance_to_pickup is not None else offer.distance
+
+                print(
+                    f"DEBUG: Conductor {offer.id_driver} - Distancia calculada: {distance_to_return}m, Tiempo: {time_to_return}min")
             else:
                 # Si no hay posición del conductor, usar los valores guardados en la oferta
                 time_to_return = offer.time
                 distance_to_return = offer.distance
+                print(
+                    f"WARNING: Conductor {offer.id_driver} no tiene posición definida, usando valores guardados: {distance_to_return}m, {time_to_return}min")
 
             result.append(DriverTripOfferResponse(
                 id=offer.id,
