@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlmodel import Session
 from app.core.db import SessionDep
 from app.core.dependencies.auth import get_current_user
@@ -92,8 +92,8 @@ Mensaje de confirmación si el token fue desactivado correctamente.
 - Si el token no existe, devuelve error 404.
 """)
 def deactivate_fcm_token(
-    fcm_token: str,
-    session: SessionDep = Depends(SessionDep),
+    session: SessionDep,
+    fcm_token: str = Query(..., description="Token FCM a desactivar"),
     current_user: User = Depends(get_current_user)
 ):
     """Desactiva un token FCM específico del usuario autenticado."""
@@ -119,7 +119,7 @@ Lista de todos los tokens FCM del usuario, con información de cada dispositivo.
 - Útil para mostrar en el perfil del usuario o para debugging.
 """)
 def get_my_fcm_tokens(
-    session: SessionDep = Depends(SessionDep),
+    session: SessionDep,
     current_user: User = Depends(get_current_user)
 ):
     """Obtiene todos los tokens FCM activos del usuario autenticado."""
@@ -142,7 +142,7 @@ Mensaje de confirmación y resultado del envío (cantidad de notificaciones exit
 - Útil solo para testing y debugging.
 """)
 def send_test_notification(
-    session: SessionDep = Depends(SessionDep),
+    session: SessionDep,
     current_user: User = Depends(get_current_user)
 ):
     """Envía una notificación de prueba a todos los dispositivos del usuario autenticado."""
