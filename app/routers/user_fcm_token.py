@@ -39,7 +39,25 @@ class FCMTokenListResponse(BaseModel):
     tokens: List[FCMTokenResponse]
 
 
-@router.post("/register", response_model=FCMTokenResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/register", response_model=FCMTokenResponse, status_code=status.HTTP_201_CREATED, description="""
+Registra o actualiza un token FCM para el usuario autenticado.
+
+**Propósito:**
+Permite que la app móvil/web registre el token FCM del dispositivo para recibir notificaciones push.
+
+**Parámetros:**
+- `fcm_token`: Token FCM generado por Firebase para el dispositivo (obligatorio).
+- `device_type`: Tipo de dispositivo (`android`, `ios` o `web`).
+- `device_name`: Nombre del dispositivo (opcional, ejemplo: "Honor 90").
+
+**Respuesta:**
+Devuelve el token registrado o actualizado con toda su información.
+
+**Notas:**
+- El endpoint requiere autenticación (Bearer token).
+- Si el token ya existe para el usuario, se actualiza y se marca como activo.
+- Si es nuevo, se crea.
+""")
 def register_fcm_token(
     request: Request,
     data: FCMTokenRegisterRequest,
@@ -57,7 +75,22 @@ def register_fcm_token(
     return FCMTokenResponse.model_validate(token, from_attributes=True)
 
 
-@router.delete("/deactivate", status_code=status.HTTP_200_OK)
+@router.delete("/deactivate", status_code=status.HTTP_200_OK, description="""
+Desactiva un token FCM específico del usuario autenticado.
+
+**Propósito:**
+Permite que la app elimine/desactive el token FCM cuando el usuario cierra sesión o desinstala la app.
+
+**Parámetros:**
+- `fcm_token`: Token FCM a desactivar (en query string).
+
+**Respuesta:**
+Mensaje de confirmación si el token fue desactivado correctamente.
+
+**Notas:**
+- El endpoint requiere autenticación (Bearer token).
+- Si el token no existe, devuelve error 404.
+""")
 def deactivate_fcm_token(
     fcm_token: str,
     session: SessionDep = Depends(SessionDep),
@@ -72,7 +105,19 @@ def deactivate_fcm_token(
     return {"detail": "Token FCM desactivado exitosamente"}
 
 
-@router.get("/my-tokens", response_model=FCMTokenListResponse)
+@router.get("/my-tokens", response_model=FCMTokenListResponse, description="""
+Obtiene todos los tokens FCM (activos e inactivos) del usuario autenticado.
+
+**Propósito:**
+Permite al usuario ver todos los dispositivos donde tiene la app activa y sus tokens FCM registrados.
+
+**Respuesta:**
+Lista de todos los tokens FCM del usuario, con información de cada dispositivo.
+
+**Notas:**
+- El endpoint requiere autenticación (Bearer token).
+- Útil para mostrar en el perfil del usuario o para debugging.
+""")
 def get_my_fcm_tokens(
     session: SessionDep = Depends(SessionDep),
     current_user: User = Depends(get_current_user)
@@ -83,7 +128,19 @@ def get_my_fcm_tokens(
     return FCMTokenListResponse(tokens=[FCMTokenResponse.model_validate(t, from_attributes=True) for t in tokens])
 
 
-@router.post("/test-notification")
+@router.post("/test-notification", description="""
+Envía una notificación de prueba a todos los dispositivos del usuario autenticado.
+
+**Propósito:**
+Permite verificar que el sistema de notificaciones push funciona correctamente para el usuario.
+
+**Respuesta:**
+Mensaje de confirmación y resultado del envío (cantidad de notificaciones exitosas y fallidas).
+
+**Notas:**
+- El endpoint requiere autenticación (Bearer token).
+- Útil solo para testing y debugging.
+""")
 def send_test_notification(
     session: SessionDep = Depends(SessionDep),
     current_user: User = Depends(get_current_user)
