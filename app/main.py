@@ -10,7 +10,7 @@ from app.routers.bank_accounts import router as bank_accounts_router
 from app.routers.test_runner import router as test_runner_router
 
 from .core.db import create_all_tables
-from .routers import config_service_value, referrals, users, drivers, auth, verify_docs, driver_position, driver_trip_offer, client_request, login_admin, withdrawal, driver_savings, withdrawal_admin, admin_statistics, admin_drivers
+from .routers import config_service_value, referrals, users, drivers, auth, verify_docs, driver_position, driver_trip_offer, client_request, login_admin, withdrawal, driver_savings, withdrawal_admin, admin_statistics, admin_drivers, user_fcm_token
 from .core.config import settings
 from .core.init_data import init_data
 from .core.middleware.auth import JWTAuthMiddleware
@@ -68,6 +68,7 @@ fastapi_app.include_router(project_settings.router)
 fastapi_app.include_router(admin_statistics.router)
 fastapi_app.include_router(admin_drivers.router)
 fastapi_app.include_router(test_runner_router)
+fastapi_app.include_router(user_fcm_token.router)
 
 # Socket.IO debe ser lo último
 app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app)
