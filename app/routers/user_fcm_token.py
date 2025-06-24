@@ -3,11 +3,13 @@ from sqlmodel import Session
 from app.core.db import SessionDep
 from app.core.dependencies.auth import get_current_user
 from app.services.user_fcm_token_service import UserFCMTokenService
+from app.services.notification_service import NotificationService
 from app.models.user_fcm_token import UserFCMToken
 from app.models.user import User
 from pydantic import BaseModel
 from uuid import UUID
 from typing import List, Optional
+from datetime import datetime
 
 router = APIRouter(prefix="/fcm-token", tags=["FCM Token"])
 
@@ -28,15 +30,26 @@ class FCMTokenResponse(BaseModel):
     device_type: str
     device_name: Optional[str]
     is_active: bool
-    last_used: Optional[str]
-    created_at: str
-    updated_at: str
+    last_used: Optional[datetime]
+    created_at: datetime
+    updated_at: datetime
 
 # Esquema para respuesta de lista de tokens
 
 
 class FCMTokenListResponse(BaseModel):
     tokens: List[FCMTokenResponse]
+
+# Esquema para testing de notificaciones de negocio
+
+
+class BusinessNotificationTestRequest(BaseModel):
+    notification_type: str
+    request_id: Optional[UUID] = None
+    driver_id: Optional[UUID] = None
+    fare: Optional[float] = None
+    estimated_time: Optional[int] = None
+    reason: Optional[str] = None
 
 
 @router.post("/register", response_model=FCMTokenResponse, status_code=status.HTTP_201_CREATED, description="""
@@ -158,3 +171,125 @@ def send_test_notification(
         data={"type": "test"}
     )
     return {"detail": "Notificación enviada", "result": result}
+
+
+@router.post("/test-business-notification", description="""
+Envía una notificación de prueba específica de negocio para Milla99.
+
+**Propósito:**
+Permite probar cada tipo de notificación de negocio con datos simulados.
+
+**Parámetros:**
+- `notification_type`: Tipo de notificación a probar:
+  - `driver_offer`: Nueva oferta de conductor
+  - `driver_assigned`: Conductor asignado
+  - `driver_on_the_way`: Conductor en camino
+  - `driver_arrived`: Conductor llegó
+  - `trip_started`: Viaje iniciado
+  - `trip_finished`: Viaje terminado
+  - `trip_cancelled_by_driver`: Cancelación por conductor
+  - `trip_assigned`: Viaje asignado al conductor
+  - `trip_cancelled_by_client`: Cancelación por cliente
+  - `payment_received`: Pago recibido
+- `request_id`: ID de la solicitud (opcional, se genera uno si no se proporciona)
+- `driver_id`: ID del conductor (opcional, se usa el usuario autenticado si no se proporciona)
+- `fare`: Tarifa (opcional, para notificaciones que la requieren)
+- `estimated_time`: Tiempo estimado en minutos (opcional)
+- `reason`: Razón de cancelación (opcional)
+
+**Respuesta:**
+Mensaje de confirmación y resultado del envío.
+
+**Notas:**
+- El endpoint requiere autenticación (Bearer token).
+- Útil solo para testing y debugging.
+- Los datos son simulados si no se proporcionan.
+""")
+def send_business_notification_test(
+    data: BusinessNotificationTestRequest,
+    session: SessionDep,
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        notification_service = NotificationService(session)
+
+        # Generar datos de prueba si no se proporcionan
+        request_id = data.request_id or UUID(
+            '550e8400-e29b-41d4-a716-446655440000')
+        driver_id = data.driver_id or current_user.id
+        fare = data.fare or 25000.0
+        estimated_time = data.estimated_time or 15
+
+        result = None
+
+        # Enviar notificación según el tipo
+        if data.notification_type == "driver_offer":
+            result = notification_service.notify_driver_offer(
+                request_id=request_id,
+                driver_id=driver_id,
+                fare=fare
+            )
+        elif data.notification_type == "driver_assigned":
+            result = notification_service.notify_driver_assigned(
+                request_id=request_id,
+                driver_id=driver_id
+            )
+        elif data.notification_type == "driver_on_the_way":
+            result = notification_service.notify_driver_status_change(
+                request_id=request_id,
+                status="ON_THE_WAY",
+                estimated_time=estimated_time
+            )
+        elif data.notification_type == "driver_arrived":
+            result = notification_service.notify_driver_status_change(
+                request_id=request_id,
+                status="ARRIVED"
+            )
+        elif data.notification_type == "trip_started":
+            result = notification_service.notify_driver_status_change(
+                request_id=request_id,
+                status="TRAVELLING"
+            )
+        elif data.notification_type == "trip_finished":
+            result = notification_service.notify_driver_status_change(
+                request_id=request_id,
+                status="FINISHED"
+            )
+        elif data.notification_type == "trip_cancelled_by_driver":
+            result = notification_service.notify_trip_cancelled_by_driver(
+                request_id=request_id,
+                reason=data.reason
+            )
+        elif data.notification_type == "trip_assigned":
+            result = notification_service.notify_trip_assigned(
+                request_id=request_id,
+                driver_id=driver_id
+            )
+        elif data.notification_type == "trip_cancelled_by_client":
+            result = notification_service.notify_trip_cancelled_by_client(
+                request_id=request_id,
+                driver_id=driver_id
+            )
+        elif data.notification_type == "payment_received":
+            result = notification_service.notify_payment_received(
+                request_id=request_id,
+                driver_id=driver_id,
+                amount=fare
+            )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Tipo de notificación '{data.notification_type}' no válido"
+            )
+
+        return {
+            "detail": f"Notificación de prueba '{data.notification_type}' enviada",
+            "notification_type": data.notification_type,
+            "result": result
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error enviando notificación de prueba: {str(e)}"
+        )

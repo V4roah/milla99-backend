@@ -3,9 +3,13 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from app.core.config import settings
+from app.core.db import SessionDep
+from app.models.user import User
+from sqlmodel import select
 from uuid import UUID
 
 bearer_scheme = HTTPBearer()
+
 
 def user_is_owner():
     def dependency(
@@ -19,7 +23,8 @@ def user_is_owner():
             )
     return dependency
 
-def get_current_user(request: Request, credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
+
+def get_current_user(request: Request, session: SessionDep, credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
     token = credentials.credentials
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -27,17 +32,25 @@ def get_current_user(request: Request, credentials: HTTPAuthorizationCredentials
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(token, settings.SECRET_KEY,
+                             algorithms=[settings.ALGORITHM])
         user_id = payload.get("sub")
         if not user_id:
             raise credentials_exception
-            
+
         # Establecer el user_id en el estado de la solicitud
         request.state.user_id = UUID(user_id)
-        
+
         role = payload.get("role")
         if role == 1:  # Si es admin, no permitir acceso
             raise credentials_exception
+
+        # Obtener el usuario real desde la base de datos
+        user = session.exec(select(User).where(
+            User.id == UUID(user_id))).first()
+        if not user:
+            raise credentials_exception
+
+        return user
     except JWTError:
         raise credentials_exception
-    return payload 

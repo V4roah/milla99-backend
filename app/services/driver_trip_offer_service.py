@@ -16,6 +16,10 @@ from uuid import UUID
 import requests
 from app.core.config import settings
 from app.utils.geo_utils import wkb_to_coords
+from app.services.notification_service import NotificationService
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def get_time_and_distance_from_google(origin_lat, origin_lng, destination_lat, destination_lng):
@@ -172,6 +176,21 @@ class DriverTripOfferService:
         self.session.commit()
         self.session.refresh(offer)
         print(f"Oferta creada exitosamente con ID: {offer.id}")
+
+        # Enviar notificación al cliente sobre la nueva oferta
+        try:
+            notification_service = NotificationService(self.session)
+            notification_result = notification_service.notify_driver_offer(
+                request_id=data["id_client_request"],
+                driver_id=data["id_driver"],
+                fare=data["fare_offer"]
+            )
+            logger.info(
+                f"Notificación de oferta enviada: {notification_result}")
+        except Exception as e:
+            logger.error(f"Error enviando notificación de oferta: {e}")
+            # No fallar la creación de la oferta si falla la notificación
+
         return offer
 
     def get_offers_by_client_request(self, id_client_request: UUID, user_id: UUID, user_role: str):

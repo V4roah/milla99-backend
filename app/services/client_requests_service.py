@@ -26,6 +26,10 @@ from typing import Dict, Set, Optional
 from app.models.payment_method import PaymentMethod
 from app.services.transaction_service import TransactionService
 from app.models.transaction import TransactionType
+from app.services.notification_service import NotificationService
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def create_client_request(db: Session, data: ClientRequestCreate, id_client: UUID):
@@ -229,6 +233,31 @@ def assign_driver_service(session: Session, id: UUID, id_driver_assigned: UUID, 
         if fare_assigned is not None:
             client_request.fare_assigned = fare_assigned
         session.commit()
+
+        # Enviar notificaciones después de asignar el conductor
+        try:
+            notification_service = NotificationService(session)
+
+            # Notificar al cliente que se asignó un conductor
+            client_notification = notification_service.notify_driver_assigned(
+                request_id=id,
+                driver_id=id_driver_assigned
+            )
+            logger.info(
+                f"Notificación de conductor asignado enviada al cliente: {client_notification}")
+
+            # Notificar al conductor que se le asignó un viaje
+            driver_notification = notification_service.notify_trip_assigned(
+                request_id=id,
+                driver_id=id_driver_assigned
+            )
+            logger.info(
+                f"Notificación de viaje asignado enviada al conductor: {driver_notification}")
+
+        except Exception as e:
+            logger.error(f"Error enviando notificaciones de asignación: {e}")
+            # No fallar la asignación si fallan las notificaciones
+
         return {"success": True, "message": "Conductor asignado correctamente"}
     except Exception as e:
         print("TRACEBACK:")
@@ -949,6 +978,36 @@ def update_status_by_driver_service(session: Session, id_client_request: int, st
         client_request.status = new_status
         client_request.updated_at = datetime.utcnow()
         session.commit()
+
+        # Enviar notificación al cliente sobre el cambio de estado
+        try:
+            notification_service = NotificationService(session)
+
+            # Obtener tiempo estimado si es ON_THE_WAY (usar el tiempo de la oferta si existe)
+            estimated_time = None
+            if new_status == StatusEnum.ON_THE_WAY:
+                # Buscar la oferta del conductor para obtener el tiempo estimado
+                from app.models.driver_trip_offer import DriverTripOffer
+                offer = session.query(DriverTripOffer).filter(
+                    DriverTripOffer.id_client_request == id_client_request,
+                    DriverTripOffer.id_driver == user_id
+                ).first()
+                if offer:
+                    estimated_time = int(offer.time)
+
+            notification_result = notification_service.notify_driver_status_change(
+                request_id=id_client_request,
+                status=new_status.value,
+                estimated_time=estimated_time
+            )
+            logger.info(
+                f"Notificación de cambio de estado enviada: {notification_result}")
+
+        except Exception as e:
+            logger.error(
+                f"Error enviando notificación de cambio de estado: {e}")
+            # No fallar el cambio de estado si falla la notificación
+
         return {"success": True, "message": "Status actualizado correctamente"}
     except Exception as e:
         session.rollback()
@@ -1049,6 +1108,21 @@ def client_canceled_service(session: Session, id_client_request: UUID, user_id: 
     client_request.status = StatusEnum.CANCELLED
     client_request.updated_at = datetime.utcnow()
     session.commit()
+
+    # Enviar notificación al conductor si hay uno asignado
+    if client_request.id_driver_assigned:
+        try:
+            notification_service = NotificationService(session)
+            notification_result = notification_service.notify_trip_cancelled_by_client(
+                request_id=id_client_request,
+                driver_id=client_request.id_driver_assigned
+            )
+            logger.info(
+                f"Notificación de cancelación por cliente enviada al conductor: {notification_result}")
+        except Exception as e:
+            logger.error(
+                f"Error enviando notificación de cancelación por cliente: {e}")
+            # No fallar la cancelación si falla la notificación
 
     # Mensaje según si hubo penalización (usando el estado original)
     if original_status in [StatusEnum.ON_THE_WAY, StatusEnum.ARRIVED]:
@@ -1237,6 +1311,19 @@ def driver_canceled_service(session: Session, id_client_request: UUID, user_id: 
                 driver.status = RoleStatus.PENDING
                 session.commit()
 
+            # Enviar notificación al cliente sobre la cancelación
+            try:
+                notification_service = NotificationService(session)
+                notification_result = notification_service.notify_trip_cancelled_by_driver(
+                    request_id=id_client_request,
+                    reason=reason
+                )
+                logger.info(
+                    f"Notificación de cancelación por conductor enviada al cliente: {notification_result}")
+            except Exception as e:
+                logger.error(
+                    f"Error enviando notificación de cancelación por conductor: {e}")
+
             return {
                 "success": True,
                 "message": f"Solicitud de viaje cancelada exitosamente por el conductor. El conductor ha sido suspendido por {config.day_suspension} días al exceder el límite de cancelaciones.",
@@ -1244,6 +1331,19 @@ def driver_canceled_service(session: Session, id_client_request: UUID, user_id: 
                 "weekly_cancellation_count": cancel_week_count
             }
         else:
+            # Enviar notificación al cliente sobre la cancelación
+            try:
+                notification_service = NotificationService(session)
+                notification_result = notification_service.notify_trip_cancelled_by_driver(
+                    request_id=id_client_request,
+                    reason=reason
+                )
+                logger.info(
+                    f"Notificación de cancelación por conductor enviada al cliente: {notification_result}")
+            except Exception as e:
+                logger.error(
+                    f"Error enviando notificación de cancelación por conductor: {e}")
+
             return {
                 "success": True,
                 "message": "Solicitud de viaje cancelada exitosamente por el conductor. Se ha registrado la cancelación.",
@@ -1255,6 +1355,19 @@ def driver_canceled_service(session: Session, id_client_request: UUID, user_id: 
         client_request.status = StatusEnum.CANCELLED
         client_request.updated_at = datetime.utcnow()
         session.commit()
+
+        # Enviar notificación al cliente sobre la cancelación
+        try:
+            notification_service = NotificationService(session)
+            notification_result = notification_service.notify_trip_cancelled_by_driver(
+                request_id=id_client_request,
+                reason=reason
+            )
+            logger.info(
+                f"Notificación de cancelación por conductor enviada al cliente: {notification_result}")
+        except Exception as e:
+            logger.error(
+                f"Error enviando notificación de cancelación por conductor: {e}")
 
         return {
             "success": True,
