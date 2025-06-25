@@ -142,92 +142,92 @@ class TestFCMTokens:
             "detail"] == "Token FCM desactivado exitosamente"
         print("Test de desactivación completado exitosamente")
 
-    # def test_get_my_fcm_tokens(self, client: TestClient, session: Session):
-    #     """Test para obtener tokens FCM del usuario"""
-    #     # Crear y autenticar usuario
-    #     user_data = {
-    #         "full_name": "Test User",
-    #         "country_code": "+57",
-    #         "phone_number": "3001234569"
-    #     }
-    #     user_response = client.post("/users/", json=user_data)
-    #     assert user_response.status_code == 201
+    def test_get_my_fcm_tokens(self, client: TestClient, session: Session):
+        """Test para obtener tokens FCM del usuario"""
+        # Crear y autenticar usuario
+        user_data = {
+            "full_name": "Test User",
+            "country_code": "+57",
+            "phone_number": "3001234569"
+        }
+        user_response = client.post("/users/", json=user_data)
+        assert user_response.status_code == 201
 
-    #     # Autenticar
-    #     send_response = client.post("/auth/verify/+57/3001234569/send")
-    #     assert send_response.status_code == 201
-    #     code = send_response.json()["message"].split()[-1]
-    #     verify_response = client.post(
-    #         "/auth/verify/+57/3001234569/code",
-    #         json={"code": code}
-    #     )
-    #     assert verify_response.status_code == 200
-    #     token = verify_response.json()["access_token"]
-    #     headers = {"Authorization": f"Bearer {token}"}
+        # Autenticar
+        send_response = client.post("/auth/verify/+57/3001234569/send")
+        assert send_response.status_code == 201
+        code = send_response.json()["message"].split()[-1]
+        verify_response = client.post(
+            "/auth/verify/+57/3001234569/code",
+            json={"code": code}
+        )
+        assert verify_response.status_code == 200
+        token = verify_response.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
 
-    #     # Registrar múltiples tokens
-    #     tokens_data = [
-    #         {"fcm_token": "token1", "device_type": "android",
-    #             "device_name": "Phone 1"},
-    #         {"fcm_token": "token2", "device_type": "ios", "device_name": "Phone 2"}
-    #     ]
+        # Registrar múltiples tokens
+        tokens_data = [
+            {"fcm_token": "token1", "device_type": "android",
+                "device_name": "Phone 1"},
+            {"fcm_token": "token2", "device_type": "ios", "device_name": "Phone 2"}
+        ]
 
-    #     for token_data in tokens_data:
-    #         response = client.post("/fcm-token/register",
-    #                                json=token_data, headers=headers)
-    #         assert response.status_code == 201
+        for token_data in tokens_data:
+            response = client.post("/fcm-token/register",
+                                   json=token_data, headers=headers)
+            assert response.status_code == 201
 
-    #     # Obtener todos los tokens
-    #     response = client.get("/fcm-token/my-tokens", headers=headers)
-    #     assert response.status_code == 200
-    #     data = response.json()
-    #     assert len(data["tokens"]) == 2
-    #     assert any(t["fcm_token"] == "token1" for t in data["tokens"])
-    #     assert any(t["fcm_token"] == "token2" for t in data["tokens"])
+        # Obtener todos los tokens
+        response = client.get("/fcm-token/my-tokens", headers=headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["tokens"]) == 2
+        assert any(t["fcm_token"] == "token1" for t in data["tokens"])
+        assert any(t["fcm_token"] == "token2" for t in data["tokens"])
 
-    # def test_test_notification_endpoint(self, client: TestClient, session: Session):
-    #     """Test para el endpoint de notificación de prueba básica"""
-    #     # Crear y autenticar usuario
-    #     user_data = {
-    #         "full_name": "Test User",
-    #         "country_code": "+57",
-    #         "phone_number": "3001234570"
-    #     }
-    #     user_response = client.post("/users/", json=user_data)
-    #     assert user_response.status_code == 201
+    def test_test_notification_endpoint(self, client: TestClient, session: Session):
+        """Test para el endpoint de notificación de prueba básica"""
+        # Crear y autenticar usuario
+        user_data = {
+            "full_name": "Test User",
+            "country_code": "+57",
+            "phone_number": "3001234570"
+        }
+        user_response = client.post("/users/", json=user_data)
+        assert user_response.status_code == 201
 
-    #     # Autenticar
-    #     send_response = client.post("/auth/verify/+57/3001234570/send")
-    #     assert send_response.status_code == 201
-    #     code = send_response.json()["message"].split()[-1]
-    #     verify_response = client.post(
-    #         "/auth/verify/+57/3001234570/code",
-    #         json={"code": code}
-    #     )
-    #     assert verify_response.status_code == 200
-    #     token = verify_response.json()["access_token"]
-    #     headers = {"Authorization": f"Bearer {token}"}
+        # Autenticar
+        send_response = client.post("/auth/verify/+57/3001234570/send")
+        assert send_response.status_code == 201
+        code = send_response.json()["message"].split()[-1]
+        verify_response = client.post(
+            "/auth/verify/+57/3001234570/code",
+            json={"code": code}
+        )
+        assert verify_response.status_code == 200
+        token = verify_response.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
 
-    #     # Probar notificación sin token FCM (debería fallar pero no dar error)
-    #     response = client.post("/fcm-token/test-notification", headers=headers)
-    #     assert response.status_code == 404
-    #     assert "No hay tokens FCM activos" in response.json()["detail"]
+        # Probar notificación sin token FCM (debería fallar pero no dar error)
+        response = client.post("/fcm-token/test-notification", headers=headers)
+        assert response.status_code == 404
+        assert "No hay tokens FCM activos" in response.json()["detail"]
 
-    #     # Registrar token y probar de nuevo
-    #     fcm_data = {
-    #         "fcm_token": "test_fcm_token_notification",
-    #         "device_type": "android",
-    #         "device_name": "Test Device"
-    #     }
-    #     register_response = client.post(
-    #         "/fcm-token/register", json=fcm_data, headers=headers)
-    #     assert register_response.status_code == 201
+        # Registrar token y probar de nuevo
+        fcm_data = {
+            "fcm_token": "test_fcm_token_notification",
+            "device_type": "android",
+            "device_name": "Test Device"
+        }
+        register_response = client.post(
+            "/fcm-token/register", json=fcm_data, headers=headers)
+        assert register_response.status_code == 201
 
-    #     # Ahora debería funcionar (aunque Firebase no esté configurado)
-    #     response = client.post("/fcm-token/test-notification", headers=headers)
-    #     assert response.status_code == 200
-    #     data = response.json()
-    #     assert "Notificación enviada" in data["detail"]
+        # Ahora debería funcionar (aunque Firebase no esté configurado)
+        response = client.post("/fcm-token/test-notification", headers=headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert "Notificación enviada" in data["detail"]
 
     # def test_business_notification_endpoint(self, client: TestClient, session: Session):
     #     """Test para el endpoint de notificaciones de negocio"""
