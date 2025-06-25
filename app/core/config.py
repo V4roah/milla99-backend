@@ -33,7 +33,13 @@ class Settings(BaseSettings):
     # Deberías cambiar esto
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60  # 1 hora (más seguro que 7 días)
+
+    # Configuración de Refresh Tokens
+    REFRESH_TOKEN_SECRET_KEY: str  # Clave separada para refresh tokens
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30  # 30 días por defecto
+    ACCESS_TOKEN_EXPIRE_MINUTES_NEW: int = 60  # 1 hora para access tokens nuevos
+    REFRESH_TOKEN_ROTATION: bool = True  # Rotar refresh tokens en cada renovación
 
     # Clave de encriptación para datos sensibles (se toma del .env)
     ENCRYPTION_KEY: str
