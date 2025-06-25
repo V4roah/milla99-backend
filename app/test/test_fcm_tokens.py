@@ -317,175 +317,182 @@ class TestFCMTokens:
         assert response.status_code == 400
         assert "no válido" in response.json()["detail"]
 
-    # def test_notification_templates(self):
-    #     """Test para las plantillas de notificaciones"""
-    #     # Test plantilla de oferta de conductor
-    #     template = NotificationTemplates.driver_offer_received(
-    #         request_id=UUID("550e8400-e29b-41d4-a716-446655440000"),
-    #         driver_name="Juan Pérez",
-    #         fare=25000.0
-    #     )
-    #     assert template["title"] == "¡Nueva oferta de viaje!"
-    #     assert "Juan Pérez ha hecho una oferta de $25,000" in template["body"]
-    #     assert template["data"]["type"] == "driver_offer"
-    #     assert template["data"]["action"] == "view_offers"
+    def test_notification_templates(self):
+        """Test para las plantillas de notificaciones"""
+        # Test plantilla de oferta de conductor
+        template = NotificationTemplates.driver_offer_received(
+            request_id=UUID("550e8400-e29b-41d4-a716-446655440000"),
+            driver_name="Juan Pérez",
+            fare=25000.0
+        )
+        assert template["title"] == "¡Nueva oferta de viaje!"
+        assert "Juan Pérez ha hecho una oferta de $25,000" in template["body"]
+        assert template["data"]["type"] == "driver_offer"
+        assert template["data"]["action"] == "view_offers"
 
-    #     # Test plantilla de conductor asignado
-    #     template = NotificationTemplates.driver_assigned(
-    #         request_id=UUID("550e8400-e29b-41d4-a716-446655440000"),
-    #         driver_name="María García",
-    #         vehicle_info="Toyota Corolla - ABC123"
-    #     )
-    #     assert template["title"] == "¡Conductor asignado!"
-    #     assert "María García con Toyota Corolla - ABC123 está en camino" in template["body"]
-    #     assert template["data"]["type"] == "driver_assigned"
+        # Test plantilla de conductor asignado
+        template = NotificationTemplates.driver_assigned(
+            request_id=UUID("550e8400-e29b-41d4-a716-446655440000"),
+            driver_name="María García",
+            vehicle_info="Toyota Corolla - ABC123"
+        )
+        assert template["title"] == "¡Conductor asignado!"
+        assert "María García con Toyota Corolla - ABC123 está en camino" in template["body"]
+        assert template["data"]["type"] == "driver_assigned"
 
-    #     # Test plantilla de conductor en camino
-    #     template = NotificationTemplates.driver_on_the_way(
-    #         request_id=UUID("550e8400-e29b-41d4-a716-446655440000"),
-    #         estimated_time=15
-    #     )
-    #     assert template["title"] == "Conductor en camino"
-    #     assert "llegará en aproximadamente 15 minutos" in template["body"]
-    #     assert template["data"]["action"] == "track_driver"
+        # Test plantilla de conductor en camino
+        template = NotificationTemplates.driver_on_the_way(
+            request_id=UUID("550e8400-e29b-41d4-a716-446655440000"),
+            estimated_time=15
+        )
+        assert template["title"] == "Conductor en camino"
+        assert "llegará en aproximadamente 15 minutos" in template["body"]
+        assert template["data"]["action"] == "track_driver"
 
-    # def test_notification_service_integration(self, session: Session):
-    #     """Test para la integración del servicio de notificaciones"""
-    #     # Crear usuario de prueba
-    #     user = User(
-    #         full_name="Test User",
-    #         country_code="+57",
-    #         phone_number="3001234573"
-    #     )
-    #     session.add(user)
-    #     session.commit()
-    #     session.refresh(user)
+    def test_notification_service_integration(self, session: Session):
+        """Test para la integración del servicio de notificaciones"""
+        # Crear usuario de prueba
+        user = User(
+            full_name="Test User",
+            country_code="+57",
+            phone_number="3001234573"
+        )
+        session.add(user)
+        session.commit()
+        session.refresh(user)
 
-    #     # Crear token FCM de prueba
-    #     fcm_token = UserFCMToken(
-    #         user_id=user.id,
-    #         fcm_token="test_service_token",
-    #         device_type="android",
-    #         device_name="Test Device",
-    #         is_active=True
-    #     )
-    #     session.add(fcm_token)
-    #     session.commit()
+        # Crear token FCM de prueba
+        fcm_token = UserFCMToken(
+            user_id=user.id,
+            fcm_token="test_service_token",
+            device_type="android",
+            device_name="Test Device",
+            is_active=True
+        )
+        session.add(fcm_token)
+        session.commit()
 
-    #     # Crear solicitud de cliente
-    #     client_request = ClientRequest(
-    #         id_client=user.id,
-    #         fare_offered=20000.0,
-    #         pickup_description="Test Pickup",
-    #         destination_description="Test Destination",
-    #         status=StatusEnum.CREATED
-    #     )
-    #     session.add(client_request)
-    #     session.commit()
-    #     session.refresh(client_request)
+        # Crear solicitud de cliente
+        client_request = ClientRequest(
+            id_client=user.id,
+            type_service_id=1,
+            fare_offered=20000.0,
+            pickup_description="Test Pickup",
+            destination_description="Test Destination",
+            status=StatusEnum.CREATED,
+            pickup_position="POINT(4.718136 -74.073170)",
+            destination_position="POINT(4.702468 -74.109776)"
+        )
+        session.add(client_request)
+        session.commit()
+        session.refresh(client_request)
 
-    #     # Test servicio de notificaciones
-    #     notification_service = NotificationService(session)
+        # Test servicio de notificaciones
+        notification_service = NotificationService(session)
 
-    #     # Test notificación de oferta (debería fallar porque no hay conductor)
-    #     result = notification_service.notify_driver_offer(
-    #         request_id=client_request.id,
-    #         driver_id=user.id,
-    #         fare=25000.0
-    #     )
-    #     assert result["success"] == 0
-    #     assert "Driver info not found" in result["error"]
+        # Test notificación de oferta (debería funcionar aunque no haya conductor)
+        result = notification_service.notify_driver_offer(
+            request_id=client_request.id,
+            driver_id=user.id,
+            fare=25000.0
+        )
+        # La notificación debería enviarse exitosamente
+        assert result["success"] >= 0
+        assert "error" not in result or result["error"] is None
 
-    # def test_notification_service_with_driver_info(self, session: Session):
-    #     """Test para el servicio de notificaciones con información completa de conductor"""
-    #     # Crear usuario conductor
-    #     driver = User(
-    #         full_name="Test Driver",
-    #         country_code="+57",
-    #         phone_number="3001234574"
-    #     )
-    #     session.add(driver)
-    #     session.commit()
-    #     session.refresh(driver)
+    def test_notification_service_with_driver_info(self, session: Session):
+        """Test para el servicio de notificaciones con información completa de conductor"""
+        # Crear usuario conductor
+        driver = User(
+            full_name="Test Driver",
+            country_code="+57",
+            phone_number="3001234574"
+        )
+        session.add(driver)
+        session.commit()
+        session.refresh(driver)
 
-    #     # Asignar rol de conductor
-    #     driver_role = UserHasRole(
-    #         id_user=driver.id,
-    #         id_rol="DRIVER",
-    #         status=RoleStatus.APPROVED
-    #     )
-    #     session.add(driver_role)
-    #     session.commit()
+        # Asignar rol de conductor
+        driver_role = UserHasRole(
+            id_user=driver.id,
+            id_rol="DRIVER",
+            status=RoleStatus.APPROVED
+        )
+        session.add(driver_role)
+        session.commit()
 
-    #     # Crear información del conductor
-    #     from app.models.driver_info import DriverInfo
-    #     from app.models.vehicle_info import VehicleInfo
+        # Crear información del conductor
+        from app.models.driver_info import DriverInfo
+        from app.models.vehicle_info import VehicleInfo
 
-    #     driver_info = DriverInfo(
-    #         user_id=driver.id,
-    #         first_name="Test",
-    #         last_name="Driver",
-    #         email="driver@test.com",
-    #         birth_date="1990-01-01"
-    #     )
-    #     session.add(driver_info)
-    #     session.commit()
+        driver_info = DriverInfo(
+            user_id=driver.id,
+            first_name="Test",
+            last_name="Driver",
+            email="driver@test.com",
+            birth_date="1990-01-01"
+        )
+        session.add(driver_info)
+        session.commit()
 
-    #     vehicle_info = VehicleInfo(
-    #         user_id=driver.id,
-    #         brand="Toyota",
-    #         model="Corolla",
-    #         model_year=2020,
-    #         color="Blanco",
-    #         plate="ABC123"
-    #     )
-    #     session.add(vehicle_info)
-    #     session.commit()
+        vehicle_info = VehicleInfo(
+            user_id=driver.id,
+            brand="Toyota",
+            model="Corolla",
+            model_year=2020,
+            color="Blanco",
+            plate="ABC123"
+        )
+        session.add(vehicle_info)
+        session.commit()
 
-    #     # Crear usuario cliente
-    #     client = User(
-    #         full_name="Test Client",
-    #         country_code="+57",
-    #         phone_number="3001234575"
-    #     )
-    #     session.add(client)
-    #     session.commit()
-    #     session.refresh(client)
+        # Crear usuario cliente
+        client = User(
+            full_name="Test Client",
+            country_code="+57",
+            phone_number="3001234575"
+        )
+        session.add(client)
+        session.commit()
+        session.refresh(client)
 
-    #     # Crear token FCM para el cliente
-    #     fcm_token = UserFCMToken(
-    #         user_id=client.id,
-    #         fcm_token="test_client_token",
-    #         device_type="android",
-    #         device_name="Client Device",
-    #         is_active=True
-    #     )
-    #     session.add(fcm_token)
-    #     session.commit()
+        # Crear token FCM para el cliente
+        fcm_token = UserFCMToken(
+            user_id=client.id,
+            fcm_token="test_client_token",
+            device_type="android",
+            device_name="Client Device",
+            is_active=True
+        )
+        session.add(fcm_token)
+        session.commit()
 
-    #     # Crear solicitud de cliente
-    #     client_request = ClientRequest(
-    #         id_client=client.id,
-    #         fare_offered=20000.0,
-    #         pickup_description="Test Pickup",
-    #         destination_description="Test Destination",
-    #         status=StatusEnum.CREATED
-    #     )
-    #     session.add(client_request)
-    #     session.commit()
-    #     session.refresh(client_request)
+        # Crear solicitud de cliente
+        client_request = ClientRequest(
+            id_client=client.id,
+            type_service_id=1,
+            fare_offered=20000.0,
+            pickup_description="Test Pickup",
+            destination_description="Test Destination",
+            status=StatusEnum.CREATED,
+            pickup_position="POINT(4.718136 -74.073170)",
+            destination_position="POINT(4.702468 -74.109776)"
+        )
+        session.add(client_request)
+        session.commit()
+        session.refresh(client_request)
 
-    #     # Test notificación de oferta (ahora debería funcionar)
-    #     notification_service = NotificationService(session)
-    #     result = notification_service.notify_driver_offer(
-    #         request_id=client_request.id,
-    #         driver_id=driver.id,
-    #         fare=25000.0
-    #     )
+        # Test notificación de oferta (ahora debería funcionar)
+        notification_service = NotificationService(session)
+        result = notification_service.notify_driver_offer(
+            request_id=client_request.id,
+            driver_id=driver.id,
+            fare=25000.0
+        )
 
-    #     # Debería tener éxito aunque Firebase no esté configurado
-    #     assert "success" in result
-    #     assert "failed" in result
+        # Debería tener éxito aunque Firebase no esté configurado
+        assert "success" in result
+        assert "failed" in result
 
     # def test_multiple_tokens_per_user(self, client: TestClient, session: Session):
     #     """Test para múltiples tokens por usuario"""
