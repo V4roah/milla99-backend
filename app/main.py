@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from app.routers import config_service_value_admin, project_settings
 from app.routers.transaction import router as transaction_router
 from app.routers.bank_accounts import router as bank_accounts_router
+from app.routers.bank import router as bank_router
 from app.routers.test_runner import router as test_runner_router
 
 from .core.db import create_all_tables
@@ -59,6 +60,7 @@ fastapi_app.include_router(transaction_router)
 fastapi_app.include_router(withdrawal.router)
 fastapi_app.include_router(driver_savings.router)
 fastapi_app.include_router(referrals.router)
+fastapi_app.include_router(bank_router)
 fastapi_app.include_router(bank_accounts_router)
 fastapi_app.include_router(login_admin.router)
 fastapi_app.include_router(verify_docs.router)
