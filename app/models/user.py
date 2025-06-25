@@ -69,6 +69,7 @@ class User(UserBase, table=True):
         back_populates="user",
         sa_relationship_kwargs={"foreign_keys": "PenalityUser.id_user"}  
     )
+    refresh_tokens: List["RefreshToken"] = Relationship(back_populates="user")
 
 class UserCreate(SQLModel):
 

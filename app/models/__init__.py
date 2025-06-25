@@ -26,3 +26,4 @@ from .type_service import TypeService, TypeServiceCreate, TypeServiceRead
 from .config_service_value import ConfigServiceValue, VehicleTypeConfigurationCreate, VehicleTypeConfigurationUpdate, VehicleTypeConfigurationResponse
 from .withdrawal import Withdrawal, WithdrawalStatus
 from .penality_user import PenalityUser, statusEnum
+from .refresh_token import RefreshToken
