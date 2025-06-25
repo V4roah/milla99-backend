@@ -14,6 +14,7 @@ from clicksend_client import SmsMessage
 from clicksend_client.rest import ApiException
 from sqlalchemy.orm import joinedload
 from uuid import UUID
+from .refresh_token_service import RefreshTokenService
 
 
 class AuthService:
@@ -65,7 +66,8 @@ class AuthService:
                 ]
             }
         }
-        print("saber que se envia:", f"{settings.WHATSAPP_API_URL}/{settings.WHATSAPP_PHONE_ID}/messages")
+        print("saber que se envia:",
+              f"{settings.WHATSAPP_API_URL}/{settings.WHATSAPP_PHONE_ID}/messages")
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -83,8 +85,6 @@ class AuthService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to send WhatsApp message: {str(e)}"
             )
-
-
 
     async def create_verification(self, country_code: str, phone_number: str) -> tuple[Verification, str]:
         # Verificar usuario existente
@@ -139,7 +139,7 @@ class AuthService:
             full_phone = f"{country_code}{phone_number}"
             message = f"code is: {verification_code}. "
 
-            #await self.send_whatsapp_message(full_phone, message)
+            # await self.send_whatsapp_message(full_phone, message)
             # await self.generate_mns_verification(full_phone, message)
 
             return verif, verification_code
@@ -150,8 +150,11 @@ class AuthService:
                 detail=f"Your verification code is: {verification_code}. This code will expire in {settings.VERIFICATION_CODE_EXPIRY_MINUTES} minutes."
             )
 
-    def verify_code(self, country_code: str, phone_number: str, code: str) -> tuple[bool, str, UserRead]:
-
+    def verify_code(self, country_code: str, phone_number: str, code: str, user_agent: str = None, ip_address: str = None) -> tuple[bool, str, str, UserRead]:
+        """
+        Verifica el código y retorna tokens + datos del usuario
+        Returns: (success, access_token, refresh_token, user_data)
+        """
         # Buscar el usuario primero
         user = self.session.exec(
             select(User).where(
@@ -207,8 +210,9 @@ class AuthService:
 
         self.session.commit()
 
-        # Generar token JWT
-        access_token = self.create_access_token(user.id)
+        # Generar tokens (access token + refresh token)
+        access_token, refresh_token = self.create_tokens_pair(
+            user.id, user_agent, ip_address)
 
         # Preparar datos de vehículo y driver_info (si aplica)
         vehicle_info_data = None
@@ -258,7 +262,7 @@ class AuthService:
             driver_info=driver_info_data
         )
 
-        return True, access_token, user_data
+        return True, access_token, refresh_token, user_data
 
     def create_access_token(self, user_id: UUID):
         to_encode = {"sub": str(user_id)}
@@ -268,6 +272,44 @@ class AuthService:
         encoded_jwt = jwt.encode(
             to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
         return encoded_jwt
+
+    def create_tokens_pair(self, user_id: UUID, user_agent: str = None, ip_address: str = None) -> tuple[str, str]:
+        """
+        Crea un par de tokens (access token + refresh token)
+        Returns: (access_token, refresh_token)
+        """
+        # Crear access token
+        access_token = self.create_access_token(user_id)
+
+        # Crear refresh token
+        refresh_token_service = RefreshTokenService(self.session)
+        refresh_token_plain, _ = refresh_token_service.generate_refresh_token(
+            user_id, user_agent, ip_address
+        )
+
+        return access_token, refresh_token_plain
+
+    def refresh_access_token(self, refresh_token: str, user_agent: str = None, ip_address: str = None) -> tuple[str, str]:
+        """
+        Renueva un access token usando un refresh token válido
+        Returns: (new_access_token, new_refresh_token)
+        """
+        refresh_token_service = RefreshTokenService(self.session)
+        return refresh_token_service.rotate_refresh_token(refresh_token, user_agent, ip_address)
+
+    def revoke_refresh_token(self, refresh_token: str) -> bool:
+        """
+        Revoca un refresh token específico
+        """
+        refresh_token_service = RefreshTokenService(self.session)
+        return refresh_token_service.revoke_refresh_token(refresh_token)
+
+    def revoke_all_user_tokens(self, user_id: UUID) -> int:
+        """
+        Revoca todos los refresh tokens de un usuario
+        """
+        refresh_token_service = RefreshTokenService(self.session)
+        return refresh_token_service.revoke_all_user_tokens(user_id)
 
     async def generate_mns_verification(self, to_phone: str, message: str) -> dict:
         try:
