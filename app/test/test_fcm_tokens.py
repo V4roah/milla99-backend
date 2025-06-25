@@ -511,65 +511,65 @@ class TestFCMTokens:
         assert "success" in result
         assert "failed" in result
 
-    # def test_multiple_tokens_per_user(self, client: TestClient, session: Session):
-    #     """Test para múltiples tokens por usuario"""
-    #     # Crear y autenticar usuario
-    #     user_data = {
-    #         "full_name": "Test User",
-    #         "country_code": "+57",
-    #         "phone_number": "3001234576"
-    #     }
-    #     user_response = client.post("/users/", json=user_data)
-    #     assert user_response.status_code == 201
+    def test_multiple_tokens_per_user(self, client: TestClient, session: Session):
+        """Test para múltiples tokens por usuario"""
+        # Crear y autenticar usuario
+        user_data = {
+            "full_name": "Test User",
+            "country_code": "+57",
+            "phone_number": "3001234576"
+        }
+        user_response = client.post("/users/", json=user_data)
+        assert user_response.status_code == 201
 
-    #     # Autenticar
-    #     send_response = client.post("/auth/verify/+57/3001234576/send")
-    #     assert send_response.status_code == 201
-    #     code = send_response.json()["message"].split()[-1]
-    #     verify_response = client.post(
-    #         "/auth/verify/+57/3001234576/code",
-    #         json={"code": code}
-    #     )
-    #     assert verify_response.status_code == 200
-    #     token = verify_response.json()["access_token"]
-    #     headers = {"Authorization": f"Bearer {token}"}
+        # Autenticar
+        send_response = client.post("/auth/verify/+57/3001234576/send")
+        assert send_response.status_code == 201
+        code = send_response.json()["message"].split()[-1]
+        verify_response = client.post(
+            "/auth/verify/+57/3001234576/code",
+            json={"code": code}
+        )
+        assert verify_response.status_code == 200
+        token = verify_response.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
 
-    #     # Registrar múltiples tokens
-    #     tokens = [
-    #         {"fcm_token": "token_android", "device_type": "android",
-    #             "device_name": "Android Phone"},
-    #         {"fcm_token": "token_ios", "device_type": "ios", "device_name": "iPhone"},
-    #         {"fcm_token": "token_web", "device_type": "web",
-    #             "device_name": "Web Browser"}
-    #     ]
+        # Registrar múltiples tokens
+        tokens = [
+            {"fcm_token": "token_android", "device_type": "android",
+                "device_name": "Android Phone"},
+            {"fcm_token": "token_ios", "device_type": "ios", "device_name": "iPhone"},
+            {"fcm_token": "token_web", "device_type": "web",
+                "device_name": "Web Browser"}
+        ]
 
-    #     for token_data in tokens:
-    #         response = client.post("/fcm-token/register",
-    #                                json=token_data, headers=headers)
-    #         assert response.status_code == 201
+        for token_data in tokens:
+            response = client.post("/fcm-token/register",
+                                   json=token_data, headers=headers)
+            assert response.status_code == 201
 
-    #     # Obtener todos los tokens
-    #     response = client.get("/fcm-token/my-tokens", headers=headers)
-    #     assert response.status_code == 200
-    #     data = response.json()
-    #     assert len(data["tokens"]) == 3
+        # Obtener todos los tokens
+        response = client.get("/fcm-token/my-tokens", headers=headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["tokens"]) == 3
 
-    #     # Verificar que todos están activos
-    #     for token_info in data["tokens"]:
-    #         assert token_info["is_active"] is True
+        # Verificar que todos están activos
+        for token_info in data["tokens"]:
+            assert token_info["is_active"] is True
 
-    #     # Desactivar uno y verificar
-    #     response = client.delete(
-    #         "/fcm-token/deactivate?fcm_token=token_android",
-    #         headers=headers
-    #     )
-    #     assert response.status_code == 200
+        # Desactivar uno y verificar
+        response = client.delete(
+            "/fcm-token/deactivate?fcm_token=token_android",
+            headers=headers
+        )
+        assert response.status_code == 200
 
-    #     # Obtener tokens de nuevo y verificar que uno está inactivo
-    #     response = client.get("/fcm-token/my-tokens", headers=headers)
-    #     assert response.status_code == 200
-    #     data = response.json()
+        # Obtener tokens de nuevo y verificar que uno está inactivo
+        response = client.get("/fcm-token/my-tokens", headers=headers)
+        assert response.status_code == 200
+        data = response.json()
 
-    #     android_token = next(
-    #         t for t in data["tokens"] if t["fcm_token"] == "token_android")
-    #     assert android_token["is_active"] is False
+        android_token = next(
+            t for t in data["tokens"] if t["fcm_token"] == "token_android")
+        assert android_token["is_active"] is False
