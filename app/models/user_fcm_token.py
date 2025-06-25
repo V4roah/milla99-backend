@@ -5,6 +5,7 @@ from datetime import datetime
 
 
 class UserFCMToken(SQLModel, table=True):
+    __tablename__ = "user_fcm_token"
     id: Optional[UUID] = Field(default_factory=uuid4, primary_key=True)
     user_id: UUID = Field(foreign_key="user.id")  # Relación foránea a User
     fcm_token: str = Field(

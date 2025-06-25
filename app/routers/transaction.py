@@ -101,9 +101,9 @@ class TransactionResponse(BaseModel):
 )
 def get_my_balance(
     request: Request,
-    session: SessionDep,
-    credentials: HTTPAuthorizationCredentials = Security(bearer_scheme)
-):
+                    session: SessionDep,
+                    credentials: HTTPAuthorizationCredentials = Security(bearer_scheme)
+                    ):
     """
     Obtiene el saldo completo del usuario autenticado.
     """
@@ -197,9 +197,9 @@ def get_my_balance(
 )
 def list_my_transactions(
     request: Request,
-    session: SessionDep,
-    credentials: HTTPAuthorizationCredentials = Security(bearer_scheme)
-):
+                        session: SessionDep,
+                        credentials: HTTPAuthorizationCredentials = Security(bearer_scheme)
+                        ):
     """
     Lista todas las transacciones del usuario autenticado.
     """
