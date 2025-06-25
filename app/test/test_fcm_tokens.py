@@ -10,6 +10,7 @@ from app.services.notification_service import NotificationService
 from app.utils.notification_templates import NotificationTemplates
 from uuid import UUID
 import json
+from app.models.vehicle_type import VehicleType
 
 
 class TestFCMTokens:
@@ -424,6 +425,7 @@ class TestFCMTokens:
         # Crear información del conductor
         from app.models.driver_info import DriverInfo
         from app.models.vehicle_info import VehicleInfo
+        from app.models.vehicle_type import VehicleType
 
         driver_info = DriverInfo(
             user_id=driver.id,
@@ -435,13 +437,28 @@ class TestFCMTokens:
         session.add(driver_info)
         session.commit()
 
+        # Obtener tipo de vehículo (Car)
+        car_type = session.exec(select(VehicleType).where(
+            VehicleType.name == "Car")).first()
+        if not car_type:
+            # Si no existe, crear uno
+            car_type = VehicleType(
+                name="Car",
+                description="Four-wheeled vehicle for passenger transportation",
+                capacity=4
+            )
+            session.add(car_type)
+            session.commit()
+            session.refresh(car_type)
+
         vehicle_info = VehicleInfo(
-            user_id=driver.id,
             brand="Toyota",
             model="Corolla",
             model_year=2020,
             color="Blanco",
-            plate="ABC123"
+            plate="ABC123",
+            vehicle_type_id=car_type.id,  # Agregar el campo obligatorio
+            driver_info_id=driver_info.id  # Cambiar user_id por driver_info_id
         )
         session.add(vehicle_info)
         session.commit()
