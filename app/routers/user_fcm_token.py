@@ -210,6 +210,20 @@ def send_business_notification_test(
     session: SessionDep,
     current_user: User = Depends(get_current_user)
 ):
+    # Validación temprana del tipo de notificación
+    valid_types = [
+        "driver_offer", "driver_assigned", "driver_on_the_way",
+        "driver_arrived", "trip_started", "trip_finished",
+        "trip_cancelled_by_driver", "trip_assigned",
+        "trip_cancelled_by_client", "payment_received"
+    ]
+
+    if data.notification_type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tipo de notificación '{data.notification_type}' no válido. Tipos válidos: {', '.join(valid_types)}"
+        )
+
     try:
         notification_service = NotificationService(session)
 
@@ -276,11 +290,6 @@ def send_business_notification_test(
                 driver_id=driver_id,
                 amount=fare
             )
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Tipo de notificación '{data.notification_type}' no válido"
-            )
 
         return {
             "detail": f"Notificación de prueba '{data.notification_type}' enviada",
@@ -288,6 +297,8 @@ def send_business_notification_test(
             "result": result
         }
 
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(
             status_code=500,

@@ -229,93 +229,93 @@ class TestFCMTokens:
         data = response.json()
         assert "Notificación enviada" in data["detail"]
 
-    # def test_business_notification_endpoint(self, client: TestClient, session: Session):
-    #     """Test para el endpoint de notificaciones de negocio"""
-    #     # Crear y autenticar usuario
-    #     user_data = {
-    #         "full_name": "Test User",
-    #         "country_code": "+57",
-    #         "phone_number": "3001234571"
-    #     }
-    #     user_response = client.post("/users/", json=user_data)
-    #     assert user_response.status_code == 201
+    def test_business_notification_endpoint(self, client: TestClient, session: Session):
+        """Test para el endpoint de notificaciones de negocio"""
+        # Crear y autenticar usuario
+        user_data = {
+            "full_name": "Test User",
+            "country_code": "+57",
+            "phone_number": "3001234571"
+        }
+        user_response = client.post("/users/", json=user_data)
+        assert user_response.status_code == 201
 
-    #     # Autenticar
-    #     send_response = client.post("/auth/verify/+57/3001234571/send")
-    #     assert send_response.status_code == 201
-    #     code = send_response.json()["message"].split()[-1]
-    #     verify_response = client.post(
-    #         "/auth/verify/+57/3001234571/code",
-    #         json={"code": code}
-    #     )
-    #     assert verify_response.status_code == 200
-    #     token = verify_response.json()["access_token"]
-    #     headers = {"Authorization": f"Bearer {token}"}
+        # Autenticar
+        send_response = client.post("/auth/verify/+57/3001234571/send")
+        assert send_response.status_code == 201
+        code = send_response.json()["message"].split()[-1]
+        verify_response = client.post(
+            "/auth/verify/+57/3001234571/code",
+            json={"code": code}
+        )
+        assert verify_response.status_code == 200
+        token = verify_response.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
 
-    #     # Probar diferentes tipos de notificaciones de negocio
-    #     notification_types = [
-    #         {"type": "driver_offer", "data": {"fare": 25000}},
-    #         {"type": "driver_assigned", "data": {}},
-    #         {"type": "driver_on_the_way", "data": {"estimated_time": 15}},
-    #         {"type": "driver_arrived", "data": {}},
-    #         {"type": "trip_started", "data": {}},
-    #         {"type": "trip_finished", "data": {"fare": 30000}},
-    #         {"type": "trip_cancelled_by_driver", "data": {
-    #             "reason": "Vehículo en mal estado"}},
-    #         {"type": "trip_assigned", "data": {}},
-    #         {"type": "trip_cancelled_by_client", "data": {}},
-    #         {"type": "payment_received", "data": {"fare": 25000}}
-    #     ]
+        # Probar diferentes tipos de notificaciones de negocio
+        notification_types = [
+            {"type": "driver_offer", "data": {"fare": 25000}},
+            {"type": "driver_assigned", "data": {}},
+            {"type": "driver_on_the_way", "data": {"estimated_time": 15}},
+            {"type": "driver_arrived", "data": {}},
+            {"type": "trip_started", "data": {}},
+            {"type": "trip_finished", "data": {"fare": 30000}},
+            {"type": "trip_cancelled_by_driver", "data": {
+                "reason": "Vehículo en mal estado"}},
+            {"type": "trip_assigned", "data": {}},
+            {"type": "trip_cancelled_by_client", "data": {}},
+            {"type": "payment_received", "data": {"fare": 25000}}
+        ]
 
-    #     for notification in notification_types:
-    #         test_data = {
-    #             "notification_type": notification["type"],
-    #             **notification["data"]
-    #         }
-    #         response = client.post(
-    #             "/fcm-token/test-business-notification",
-    #             json=test_data,
-    #             headers=headers
-    #         )
-    #         assert response.status_code == 200
-    #         data = response.json()
-    #         assert data["notification_type"] == notification["type"]
-    #         assert "enviada" in data["detail"]
+        for notification in notification_types:
+            test_data = {
+                "notification_type": notification["type"],
+                **notification["data"]
+            }
+            response = client.post(
+                "/fcm-token/test-business-notification",
+                json=test_data,
+                headers=headers
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["notification_type"] == notification["type"]
+            assert "enviada" in data["detail"]
 
-    # def test_invalid_notification_type(self, client: TestClient, session: Session):
-    #     """Test para tipo de notificación inválido"""
-    #     # Crear y autenticar usuario
-    #     user_data = {
-    #         "full_name": "Test User",
-    #         "country_code": "+57",
-    #         "phone_number": "3001234572"
-    #     }
-    #     user_response = client.post("/users/", json=user_data)
-    #     assert user_response.status_code == 201
+    def test_invalid_notification_type(self, client: TestClient, session: Session):
+        """Test para tipo de notificación inválido"""
+        # Crear y autenticar usuario
+        user_data = {
+            "full_name": "Test User",
+            "country_code": "+57",
+            "phone_number": "3001234572"
+        }
+        user_response = client.post("/users/", json=user_data)
+        assert user_response.status_code == 201
 
-    #     # Autenticar
-    #     send_response = client.post("/auth/verify/+57/3001234572/send")
-    #     assert send_response.status_code == 201
-    #     code = send_response.json()["message"].split()[-1]
-    #     verify_response = client.post(
-    #         "/auth/verify/+57/3001234572/code",
-    #         json={"code": code}
-    #     )
-    #     assert verify_response.status_code == 200
-    #     token = verify_response.json()["access_token"]
-    #     headers = {"Authorization": f"Bearer {token}"}
+        # Autenticar
+        send_response = client.post("/auth/verify/+57/3001234572/send")
+        assert send_response.status_code == 201
+        code = send_response.json()["message"].split()[-1]
+        verify_response = client.post(
+            "/auth/verify/+57/3001234572/code",
+            json={"code": code}
+        )
+        assert verify_response.status_code == 200
+        token = verify_response.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
 
-    #     # Probar tipo inválido
-    #     test_data = {
-    #         "notification_type": "invalid_type"
-    #     }
-    #     response = client.post(
-    #         "/fcm-token/test-business-notification",
-    #         json=test_data,
-    #         headers=headers
-    #     )
-    #     assert response.status_code == 400
-    #     assert "no válido" in response.json()["detail"]
+        # Probar tipo inválido
+        test_data = {
+            "notification_type": "invalid_type"
+        }
+        response = client.post(
+            "/fcm-token/test-business-notification",
+            json=test_data,
+            headers=headers
+        )
+        assert response.status_code == 400
+        assert "no válido" in response.json()["detail"]
 
     # def test_notification_templates(self):
     #     """Test para las plantillas de notificaciones"""
