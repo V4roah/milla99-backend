@@ -125,7 +125,7 @@ async def refresh_token_endpoint(
     request: Request,
     session: SessionDep
 ):
-    """Renueva el access token usando un refresh token válido."""
+    print("[DEBUG] /auth/refresh llamado con refresh_token:", data.refresh_token)
     service = AuthService(session)
     try:
         user_agent = request.headers.get("user-agent")
@@ -161,8 +161,8 @@ async def logout_endpoint(
 
 @router.post("/logout-all", response_model=MessageResponse)
 async def logout_all_endpoint(
-    current_user=Depends(get_current_user),
-    session: SessionDep = Depends()
+    session: SessionDep,
+    current_user=Depends(get_current_user)
 ):
     """Revoca todos los refresh tokens del usuario autenticado."""
     service = AuthService(session)

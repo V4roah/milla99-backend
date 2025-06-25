@@ -14,6 +14,8 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             ("/users/", "POST"),
             ("/users/", "GET"),  # Solo el registro de usuarios
             ("/auth/verify/", "POST"),  # Rutas de verificación
+            ("/auth/refresh", "POST"),  # Permitir refresh token sin autenticación
+            ("/auth/logout", "POST"),  # Permitir logout (revocación de refresh token) sin autenticación
             ("/docs", "GET"),  # Documentación
             ("/openapi.json", "GET"),  # Esquema OpenAPI
             ("/drivers/", "POST"),  # creacion de drivers

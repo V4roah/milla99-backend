@@ -9,6 +9,7 @@ from jose import jwt, JWTError
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.core.config import settings
+import traceback
 
 
 class RefreshTokenService:
@@ -22,13 +23,12 @@ class RefreshTokenService:
         """
         # Generar token aleatorio seguro
         token_plain = secrets.token_urlsafe(64)
-
+        print("[DEBUG] generate_refresh_token: token_plain:", token_plain)
         # Crear hash del token para almacenar en BD
         token_hash = hashlib.sha256(token_plain.encode()).hexdigest()
-
+        print("[DEBUG] generate_refresh_token: token_hash:", token_hash)
         # Calcular fecha de expiración
         expires_at = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-
         # Crear registro en BD
         refresh_token = RefreshToken(
             id=uuid4(),
@@ -38,31 +38,35 @@ class RefreshTokenService:
             user_agent=user_agent,
             ip_address=ip_address
         )
-
         self.session.add(refresh_token)
         self.session.commit()
         self.session.refresh(refresh_token)
-
+        print("[DEBUG] generate_refresh_token: refresh_token guardado:", refresh_token)
         return token_plain, refresh_token
 
     def validate_refresh_token(self, token: str) -> Optional[RefreshToken]:
         """
         Valida un refresh token y retorna el registro si es válido
         """
-        # Crear hash del token recibido
-        token_hash = hashlib.sha256(token.encode()).hexdigest()
-
-        # Buscar el token en BD
-        refresh_token = self.session.exec(
-            select(RefreshToken)
-            .where(
-                RefreshToken.token_hash == token_hash,
-                RefreshToken.expires_at > datetime.utcnow(),
-                RefreshToken.is_revoked == False
-            )
-        ).first()
-
-        return refresh_token
+        print("[DEBUG] validate_refresh_token: token recibido:", token)
+        try:
+            token_hash = hashlib.sha256(token.encode()).hexdigest()
+            print("[DEBUG] validate_refresh_token: token_hash:", token_hash)
+            refresh_token = self.session.exec(
+                select(RefreshToken)
+                .where(
+                    RefreshToken.token_hash == token_hash,
+                    RefreshToken.expires_at > datetime.utcnow(),
+                    RefreshToken.is_revoked == False
+                )
+            ).first()
+            print(
+                "[DEBUG] validate_refresh_token: refresh_token encontrado:", refresh_token)
+            return refresh_token
+        except Exception as e:
+            print("[ERROR] validate_refresh_token:", e)
+            print(traceback.format_exc())
+            return None
 
     def revoke_refresh_token(self, token: str) -> bool:
         """
@@ -171,30 +175,31 @@ class RefreshTokenService:
         Rota un refresh token (crea uno nuevo y revoca el anterior)
         Returns: (new_access_token, new_refresh_token)
         """
-        # Validar token actual
-        old_refresh_token = self.validate_refresh_token(old_token)
-        if not old_refresh_token:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid refresh token"
-            )
-
-        # Crear nuevo access token
-        new_access_token = self.create_access_token_from_refresh(
-            old_refresh_token)
-
-        # Crear nuevo refresh token si la rotación está habilitada
-        if settings.REFRESH_TOKEN_ROTATION:
-            new_refresh_token_plain, new_refresh_token_record = self.generate_refresh_token(
-                old_refresh_token.user_id,
-                user_agent,
-                ip_address
-            )
-
-            # Revocar el token anterior
-            self.revoke_refresh_token(old_token)
-
-            return new_access_token, new_refresh_token_plain
-        else:
-            # Sin rotación, solo retornar el access token
-            return new_access_token, old_token
+        print("[DEBUG] rotate_refresh_token: old_token:", old_token)
+        try:
+            old_refresh_token = self.validate_refresh_token(old_token)
+            print("[DEBUG] rotate_refresh_token: old_refresh_token:",
+                  old_refresh_token)
+            if not old_refresh_token:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid refresh token"
+                )
+            new_access_token = self.create_access_token_from_refresh(
+                old_refresh_token)
+            if settings.REFRESH_TOKEN_ROTATION:
+                new_refresh_token_plain, new_refresh_token_record = self.generate_refresh_token(
+                    old_refresh_token.user_id,
+                    user_agent,
+                    ip_address
+                )
+                self.revoke_refresh_token(old_token)
+                print("[DEBUG] rotate_refresh_token: new_refresh_token_plain:",
+                      new_refresh_token_plain)
+                return new_access_token, new_refresh_token_plain
+            else:
+                return new_access_token, old_token
+        except Exception as e:
+            print("[ERROR] rotate_refresh_token:", e)
+            print(traceback.format_exc())
+            raise
