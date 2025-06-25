@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, status, HTTPException
+from fastapi import APIRouter, Depends, status, HTTPException, Request
 from ..core.db import SessionDep
 from ..services.auth_service import AuthService
 from pydantic import BaseModel
 from app.models.user import UserRead
+from app.core.dependencies.auth import get_current_user
 import logging
 
 
@@ -20,6 +21,7 @@ class VerificationRequest(BaseModel):
 class VerifResponseCode(BaseModel):
     message: str
     access_token: str | None = None
+    refresh_token: str | None = None
     token_type: str | None = None
     user: UserRead | None = None
 
@@ -31,6 +33,20 @@ class VerificationResponse(BaseModel):
 
 class SMSMessage(BaseModel):
     phone_number: str
+    message: str
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
+
+class MessageResponse(BaseModel):
     message: str
 
 
@@ -85,11 +101,12 @@ async def verify_code(
     """Verify the code sent via WhatsApp"""
     service = AuthService(session)  # crear instancia del servicio
     try:
-        result, access_token, user = service.verify_code(
-            country_code, phone_number, verification.code)  # verificar el código
+        result, access_token, refresh_token, user = service.verify_code(
+            country_code, phone_number, verification.code)
         return VerifResponseCode(
             message="Code verified successfully",
             access_token=access_token,
+            refresh_token=refresh_token,
             token_type="bearer",
             user=UserRead.model_validate(user, from_attributes=True)
         )
@@ -100,3 +117,54 @@ async def verify_code(
         # Loguear el error inesperado
         logging.exception("Unexpected error verifying code")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh_token_endpoint(
+    data: RefreshTokenRequest,
+    request: Request,
+    session: SessionDep
+):
+    """Renueva el access token usando un refresh token válido."""
+    service = AuthService(session)
+    try:
+        user_agent = request.headers.get("user-agent")
+        ip_address = request.client.host if request.client else None
+        access_token, new_refresh_token = service.refresh_access_token(
+            data.refresh_token, user_agent, ip_address
+        )
+        return TokenResponse(
+            access_token=access_token,
+            refresh_token=new_refresh_token
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.exception("Unexpected error refreshing token")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/logout", response_model=MessageResponse)
+async def logout_endpoint(
+    data: RefreshTokenRequest,
+    session: SessionDep
+):
+    """Revoca el refresh token actual."""
+    service = AuthService(session)
+    revoked = service.revoke_refresh_token(data.refresh_token)
+    if revoked:
+        return MessageResponse(message="Refresh token revoked")
+    else:
+        raise HTTPException(
+            status_code=400, detail="Invalid or already revoked refresh token")
+
+
+@router.post("/logout-all", response_model=MessageResponse)
+async def logout_all_endpoint(
+    current_user=Depends(get_current_user),
+    session: SessionDep = Depends()
+):
+    """Revoca todos los refresh tokens del usuario autenticado."""
+    service = AuthService(session)
+    count = service.revoke_all_user_tokens(current_user.id)
+    return MessageResponse(message=f"Revoked {count} refresh tokens for user.")
