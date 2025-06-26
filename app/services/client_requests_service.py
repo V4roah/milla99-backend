@@ -19,7 +19,7 @@ from app.models.vehicle_info import VehicleInfo
 from app.services.driver_trip_offer_service import get_average_rating
 from sqlalchemy.orm import selectinload
 import traceback
-from app.utils.geo_utils import wkb_to_coords
+from app.utils.geo_utils import wkb_to_coords, get_address_from_coords
 from app.models.type_service import TypeService
 from uuid import UUID
 from typing import Dict, Set, Optional
@@ -75,46 +75,6 @@ def get_time_and_distance_service(origin_lat, origin_lng, destination_lat, desti
     return data
 
 
-def get_address_from_coords(lat: float, lng: float) -> Optional[str]:
-    """
-    Obtiene una dirección legible a partir de coordenadas de latitud y longitud
-    utilizando la API de Geocodificación Inversa de Google.
-    """
-    if not lat or not lng:
-        return None
-
-    url = "https://maps.googleapis.com/maps/api/geocode/json"
-    params = {
-        "latlng": f"{lat},{lng}",
-        "key": settings.GOOGLE_API_KEY,
-        "language": "es"  # Para obtener resultados en español
-    }
-
-    try:
-        response = requests.get(url, params=params)
-        # Lanza una excepción para errores HTTP (4xx o 5xx)
-        response.raise_for_status()
-        data = response.json()
-
-        if data.get("status") == "OK" and data.get("results"):
-            # Devolvemos la primera dirección formateada que usualmente es la más precisa
-            return data["results"][0].get("formatted_address")
-        else:
-            # Manejar casos donde Google no devuelve resultados o reporta un error
-            print(
-                f"Error de Geocoding API: {data.get('status')}, {data.get('error_message')}")
-            return "Dirección no encontrada"
-
-    except requests.exceptions.RequestException as e:
-        # Manejar errores de red o HTTP
-        print(f"Error de red al consultar Google Geocoding API: {e}")
-        return "Error al obtener dirección"
-    except Exception as e:
-        # Manejar otros errores inesperados
-        print(f"Error inesperado en get_address_from_coords: {e}")
-        return "Error al procesar dirección"
-
-
 def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session, wkb_to_coords, type_service_ids=None):
     print(
         f"\n[DEBUG] Calculando distancias para conductor en lat={driver_lat}, lng={driver_lng}")
@@ -168,6 +128,14 @@ def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session,
     for row in query_results:
         cr, full_name, country_code, phone_number, type_service_name, distance, time_difference = row
         pickup_coords = wkb_to_coords(cr.pickup_position)
+        destination_coords = wkb_to_coords(cr.destination_position)
+
+        # Obtener direcciones desde coordenadas
+        pickup_address = get_address_from_coords(
+            pickup_coords['lat'], pickup_coords['lng']) if pickup_coords else "No disponible"
+        destination_address = get_address_from_coords(
+            destination_coords['lat'], destination_coords['lng']) if destination_coords else "No disponible"
+
         print(f"[DEBUG] Solicitud {cr.id}:")
         print(
             f"  - Coordenadas: lat={pickup_coords['lat']}, lng={pickup_coords['lng']}")
@@ -186,7 +154,9 @@ def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session,
             "status": cr.status,
             "updated_at": cr.updated_at.isoformat(),
             "pickup_position": pickup_coords,
-            "destination_position": wkb_to_coords(cr.destination_position),
+            "destination_position": destination_coords,
+            "pickup_address": pickup_address,
+            "destination_address": destination_address,
             "distance": float(distance) if distance is not None else None,
             "time_difference": int(time_difference) if time_difference is not None else None,
             "type_service": {

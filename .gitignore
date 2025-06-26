@@ -29,3 +29,8 @@ __pycache__/
 static/
 
 app/load_tests/response/
+
+
+# Entornos
+env.qa
+env.production

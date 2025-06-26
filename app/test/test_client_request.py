@@ -1934,3 +1934,156 @@ def test_get_offers_with_calculated_time_and_distance(client):
 
     print(
         f"\n[SUCCESS] Test exitoso: La oferta devolvió time={first_offer['time']} y distance={first_offer['distance']}")
+
+
+def test_nearby_requests_with_addresses():
+    """
+    Verifica que el endpoint /client-request/nearby devuelve pickup_address y destination_address
+    en el response, usando la función get_address_from_coords para convertir coordenadas a nombres legibles.
+    """
+    print("\n=== INICIANDO TEST DE DIRECCIONES EN NEARBY ===")
+
+    # 1. Crear y autenticar conductor
+    driver_phone = "3010000015"  # Nuevo número para evitar conflictos
+    driver_country_code = "+57"
+    print(f"\n1. Creando conductor con teléfono {driver_phone}")
+    driver_token, driver_id = create_and_approve_driver(
+        client, driver_phone, driver_country_code)
+    driver_headers = {"Authorization": f"Bearer {driver_token}"}
+    print(f"Conductor creado con ID: {driver_id}")
+
+    # Posición del conductor (centro de Bogotá)
+    driver_lat = 4.60971
+    driver_lng = -74.08175
+    print(f"Posición del conductor: lat={driver_lat}, lng={driver_lng}")
+
+    # 2. Crear cliente y solicitud
+    print("\n2. Creando cliente y solicitud")
+    client_phone = "3011111121"  # Nuevo número para evitar conflictos
+    client_data = {
+        "full_name": "Cliente Test Direcciones",
+        "country_code": driver_country_code,
+        "phone_number": client_phone
+    }
+    create_resp = client.post("/users/", json=client_data)
+    assert create_resp.status_code == 201, f"Error al crear cliente: {create_resp.text}"
+
+    # Autenticar cliente
+    send_resp = client.post(
+        f"/auth/verify/{driver_country_code}/{client_phone}/send")
+    assert send_resp.status_code == 201, f"Error al enviar código: {send_resp.text}"
+    code = send_resp.json()["message"].split()[-1]
+
+    verify_resp = client.post(
+        f"/auth/verify/{driver_country_code}/{client_phone}/code",
+        json={"code": code})
+    assert verify_resp.status_code == 200, f"Error al verificar código: {verify_resp.text}"
+    client_token = verify_resp.json()["access_token"]
+    client_headers = {"Authorization": f"Bearer {client_token}"}
+
+    # Crear solicitud con coordenadas conocidas
+    request_data = {
+        "fare_offered": 20000,
+        "pickup_description": "Test Pickup",
+        "destination_description": "Test Destination",
+        "pickup_lat": 4.60971,  # Mismo punto que el conductor
+        "pickup_lng": -74.08175,
+        "destination_lat": 4.702468,  # Coordenadas de destino
+        "destination_lng": -74.109776,
+        "type_service_id": 1,  # Car
+        "payment_method_id": 1  # Cash
+    }
+
+    create_resp = client.post(
+        "/client-request/", json=request_data, headers=client_headers)
+    assert create_resp.status_code == 201, f"Error al crear solicitud: {create_resp.text}"
+    request_id = create_resp.json()["id"]
+    print(f"Solicitud creada con ID: {request_id}")
+
+    # 3. Consultar solicitudes cercanas
+    print("\n3. Consultando solicitudes cercanas")
+    nearby_resp = client.get(
+        f"/client-request/nearby?driver_lat={driver_lat}&driver_lng={driver_lng}",
+        headers=driver_headers
+    )
+    assert nearby_resp.status_code == 200, f"Error al consultar nearby: {nearby_resp.text}"
+    nearby_data = nearby_resp.json()
+
+    print(f"\nSolicitudes cercanas encontradas: {len(nearby_data)}")
+
+    # 4. Verificar que la solicitud aparece y tiene los nuevos campos
+    print("\n4. Verificando campos de direcciones")
+    test_request = next(
+        (req for req in nearby_data if str(req["id"]) == str(request_id)), None)
+    assert test_request is not None, f"No se encontró la solicitud {request_id} en nearby"
+
+    # Verificar que existen los nuevos campos
+    assert "pickup_address" in test_request, "El campo pickup_address no está presente"
+    assert "destination_address" in test_request, "El campo destination_address no está presente"
+
+    # Verificar que los campos no están vacíos
+    assert test_request["pickup_address"] is not None, "pickup_address no puede ser None"
+    assert test_request["destination_address"] is not None, "destination_address no puede ser None"
+    assert test_request["pickup_address"] != "", "pickup_address no puede estar vacío"
+    assert test_request["destination_address"] != "", "destination_address no puede estar vacío"
+
+    # Verificar que las direcciones son strings legibles
+    assert isinstance(test_request["pickup_address"],
+                      str), "pickup_address debe ser un string"
+    assert isinstance(test_request["destination_address"],
+                      str), "destination_address debe ser un string"
+
+    # Verificar que las direcciones contienen información útil (no "Error al obtener dirección")
+    assert "Error al obtener dirección" not in test_request["pickup_address"], \
+        f"pickup_address contiene error: {test_request['pickup_address']}"
+    assert "Error al obtener dirección" not in test_request["destination_address"], \
+        f"destination_address contiene error: {test_request['destination_address']}"
+
+    # Verificar que las direcciones no son "No disponible" (a menos que las coordenadas sean inválidas)
+    if test_request["pickup_address"] != "No disponible":
+        assert len(test_request["pickup_address"]) > 10, \
+            f"pickup_address parece muy corto: {test_request['pickup_address']}"
+    if test_request["destination_address"] != "No disponible":
+        assert len(test_request["destination_address"]) > 10, \
+            f"destination_address parece muy corto: {test_request['destination_address']}"
+
+    # 5. Verificar que los campos de posición siguen existiendo
+    print("\n5. Verificando campos de posición existentes")
+    assert "pickup_position" in test_request, "El campo pickup_position debe seguir existiendo"
+    assert "destination_position" in test_request, "El campo destination_position debe seguir existiendo"
+    assert test_request["pickup_position"] is not None, "pickup_position no puede ser None"
+    assert test_request["destination_position"] is not None, "destination_position no puede ser None"
+
+    # Verificar estructura de las posiciones
+    assert "lat" in test_request["pickup_position"], "pickup_position debe tener campo lat"
+    assert "lng" in test_request["pickup_position"], "pickup_position debe tener campo lng"
+    assert "lat" in test_request["destination_position"], "destination_position debe tener campo lat"
+    assert "lng" in test_request["destination_position"], "destination_position debe tener campo lng"
+
+    # 6. Imprimir información para verificación manual
+    print("\n6. Información de la solicitud:")
+    print(f"ID: {test_request['id']}")
+    print(f"Pickup Position: {test_request['pickup_position']}")
+    print(f"Pickup Address: {test_request['pickup_address']}")
+    print(f"Destination Position: {test_request['destination_position']}")
+    print(f"Destination Address: {test_request['destination_address']}")
+    print(f"Distance: {test_request.get('distance', 'N/A')} metros")
+
+    # 7. Verificar que la dirección coincide con las coordenadas (validación básica)
+    print("\n7. Verificando consistencia entre coordenadas y direcciones")
+    pickup_lat = test_request["pickup_position"]["lat"]
+    pickup_lng = test_request["pickup_position"]["lng"]
+    dest_lat = test_request["destination_position"]["lat"]
+    dest_lng = test_request["destination_position"]["lng"]
+
+    # Las coordenadas deben coincidir con las que enviamos
+    assert abs(
+        pickup_lat - 4.60971) < 0.001, f"Latitud de pickup no coincide: {pickup_lat}"
+    assert abs(pickup_lng - (-74.08175)
+               ) < 0.001, f"Longitud de pickup no coincide: {pickup_lng}"
+    assert abs(
+        dest_lat - 4.702468) < 0.001, f"Latitud de destino no coincide: {dest_lat}"
+    assert abs(dest_lng - (-74.109776)
+               ) < 0.001, f"Longitud de destino no coincide: {dest_lng}"
+
+    print("\n=== TEST DE DIRECCIONES EN NEARBY COMPLETADO EXITOSAMENTE ===")
