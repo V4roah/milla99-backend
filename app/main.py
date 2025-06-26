@@ -10,7 +10,7 @@ from app.routers.bank_accounts import router as bank_accounts_router
 from app.routers.bank import router as bank_router
 from app.routers.test_runner import router as test_runner_router
 
-from .core.db import create_all_tables
+from .core.db import create_all_tables, get_environment_info
 from .routers import config_service_value, referrals, users, drivers, auth, verify_docs, driver_position, driver_trip_offer, client_request, login_admin, withdrawal, driver_savings, withdrawal_admin, admin_statistics, admin_drivers, user_fcm_token
 from .core.config import settings
 from .core.init_data import init_data
@@ -21,11 +21,23 @@ import socketio
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("Iniciando la aplicación...")
+    print("🚀 Iniciando la aplicación...")
+
+    # Mostrar información del entorno
+    env_info = get_environment_info()
+    print(f"🌍 Entorno: {env_info['environment']}")
+    print(f"📊 Base de datos: {env_info['database_url']}")
+    print(f"🔒 Seguro para inicialización: {env_info['safe_for_init']}")
+
+    # Crear tablas
     create_all_tables()
+
+    # Inicializar datos (con validaciones automáticas)
     init_data()
+
+    print("✅ Aplicación iniciada correctamente")
     yield
-    print("Cerrando la aplicación...")
+    print("🔚 Cerrando la aplicación...")
 
 fastapi_app = FastAPI(
     lifespan=lifespan,

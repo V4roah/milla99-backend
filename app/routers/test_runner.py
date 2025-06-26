@@ -175,31 +175,31 @@ def run_tests_with_html_output() -> str:
         raise Exception(f"Error ejecutando tests: {str(e)}")
 
 
-@router.post("/run", description="""
-Ejecuta todos los tests del proyecto y devuelve los resultados en formato JSON.
+# @router.post("/run", description="""
+# Ejecuta todos los tests del proyecto y devuelve los resultados en formato JSON.
 
-**Permisos:** Solo administradores pueden ejecutar tests.
+# **Permisos:** Solo administradores pueden ejecutar tests.
 
-**Respuesta:**
-- `success`: Boolean indicando si todos los tests pasaron
-- `summary`: Resumen de resultados (total, passed, failed, skipped, errors, duration)
-- `results`: Lista detallada de cada test con su estado y duración
-- `stdout`: Salida estándar de pytest
-- `stderr`: Salida de errores de pytest
-""")
-async def run_tests():
-    """Ejecuta todos los tests y devuelve resultados en JSON - Solo ADMIN"""
-    try:
-        results = run_tests_with_json_output()
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content=results
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error ejecutando tests: {str(e)}"
-        )
+# **Respuesta:**
+# - `success`: Boolean indicando si todos los tests pasaron
+# - `summary`: Resumen de resultados (total, passed, failed, skipped, errors, duration)
+# - `results`: Lista detallada de cada test con su estado y duración
+# - `stdout`: Salida estándar de pytest
+# - `stderr`: Salida de errores de pytest
+# """)
+# async def run_tests():
+#     """Ejecuta todos los tests y devuelve resultados en JSON - Solo ADMIN"""
+#     try:
+#         results = run_tests_with_json_output()
+#         return JSONResponse(
+#             status_code=status.HTTP_200_OK,
+#             content=results
+#         )
+#     except Exception as e:
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=f"Error ejecutando tests: {str(e)}"
+#         )
 
 
 @router.post("/run-html", description="""
@@ -267,60 +267,60 @@ async def list_reports():
     }
 
 
-@router.post("/run-specific", description="""
-Ejecuta tests específicos basados en patrones o nombres de archivo.
+# @router.post("/run-specific", description="""
+# Ejecuta tests específicos basados en patrones o nombres de archivo.
 
-**Permisos:** Solo administradores pueden ejecutar tests.
+# **Permisos:** Solo administradores pueden ejecutar tests.
 
-**Parámetros:**
-- `test_pattern`: Patrón para filtrar tests (ej: "test_auth", "test_client_request")
-""")
-async def run_specific_tests(test_pattern: str):
-    """Ejecuta tests específicos basados en un patrón - Solo ADMIN"""
-    try:
-        # Crear archivo temporal para el reporte JSON
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
-            json_report_path = temp_file.name
+# **Parámetros:**
+# - `test_pattern`: Patrón para filtrar tests (ej: "test_auth", "test_client_request")
+# """)
+# async def run_specific_tests(test_pattern: str):
+#     """Ejecuta tests específicos basados en un patrón - Solo ADMIN"""
+#     try:
+#         # Crear archivo temporal para el reporte JSON
+#         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
+#             json_report_path = temp_file.name
 
-        cmd = [
-            "pytest",
-            f"app/test/{test_pattern}",
-            "--json-report",
-            f"--json-report-file={json_report_path}",
-            "--json-report-indent=2",
-            "-v"
-        ]
+#         cmd = [
+#             "pytest",
+#             f"app/test/{test_pattern}",
+#             "--json-report",
+#             f"--json-report-file={json_report_path}",
+#             "--json-report-indent=2",
+#             "-v"
+#         ]
 
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            cwd=os.getcwd()
-        )
+#         process = subprocess.Popen(
+#             cmd,
+#             stdout=subprocess.PIPE,
+#             stderr=subprocess.PIPE,
+#             text=True,
+#             cwd=os.getcwd()
+#         )
 
-        stdout, stderr = process.communicate()
+#         stdout, stderr = process.communicate()
 
-        # Leer el reporte JSON
-        results = {"success": process.returncode ==
-                   0, "stdout": stdout, "stderr": stderr}
+#         # Leer el reporte JSON
+#         results = {"success": process.returncode ==
+#                    0, "stdout": stdout, "stderr": stderr}
 
-        if os.path.exists(json_report_path):
-            with open(json_report_path, 'r') as f:
-                json_data = json.load(f)
-            results.update(json_data)
+#         if os.path.exists(json_report_path):
+#             with open(json_report_path, 'r') as f:
+#                 json_data = json.load(f)
+#             results.update(json_data)
 
-        # Limpiar archivo temporal
-        if os.path.exists(json_report_path):
-            os.unlink(json_report_path)
+#         # Limpiar archivo temporal
+#         if os.path.exists(json_report_path):
+#             os.unlink(json_report_path)
 
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content=results
-        )
+#         return JSONResponse(
+#             status_code=status.HTTP_200_OK,
+#             content=results
+#         )
 
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error ejecutando tests específicos: {str(e)}"
-        )
+#     except Exception as e:
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=f"Error ejecutando tests específicos: {str(e)}"
+#         )

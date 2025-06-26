@@ -11,8 +11,10 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = True
 
-    # Configuración de la base de datos
+    # Configuración de la base de datos - MÚLTIPLES ENTORNOS
     DATABASE_URL: str
+    DATABASE_URL_QA: Optional[str] = None
+    DATABASE_URL_PRODUCTION: Optional[str] = None
     TEST_DATABASE_URL: str
 
     # Configuración CORS
@@ -84,6 +86,38 @@ class Settings(BaseSettings):
         kwargs["_env_file"] = env_file
 
         super().__init__(**kwargs)
+
+    @property
+    def current_database_url(self) -> str:
+        """Retorna la URL de base de datos según el entorno actual"""
+        environment = os.getenv("ENVIRONMENT", "development").lower()
+
+        if environment == "qa" and self.DATABASE_URL_QA:
+            return self.DATABASE_URL_QA
+        elif environment == "production" and self.DATABASE_URL_PRODUCTION:
+            return self.DATABASE_URL_PRODUCTION
+        else:
+            return self.DATABASE_URL  # development por defecto
+
+    @property
+    def is_development(self) -> bool:
+        """Verifica si estamos en entorno de desarrollo"""
+        return os.getenv("ENVIRONMENT", "development").lower() == "development"
+
+    @property
+    def is_qa(self) -> bool:
+        """Verifica si estamos en entorno de QA"""
+        return os.getenv("ENVIRONMENT", "development").lower() == "qa"
+
+    @property
+    def is_production(self) -> bool:
+        """Verifica si estamos en entorno de producción"""
+        return os.getenv("ENVIRONMENT", "development").lower() == "production"
+
+    @property
+    def environment_name(self) -> str:
+        """Retorna el nombre del entorno actual"""
+        return os.getenv("ENVIRONMENT", "development").lower()
 
 
 @lru_cache()

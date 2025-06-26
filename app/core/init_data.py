@@ -33,6 +33,7 @@ from app.models.payment_method import PaymentMethod
 import random
 from app.models.bank import Bank
 import traceback
+from app.core.db import is_safe_for_data_initialization, get_environment_info
 
 
 def uuid_prueba(num: int) -> UUID:
@@ -941,63 +942,99 @@ def init_banks(session: Session):
 # ============================================================================
 
 def init_data():
-    """Función principal de inicialización de datos"""
+    """Función principal de inicialización de datos con validaciones de entorno"""
+
+    # Obtener información del entorno
+    env_info = get_environment_info()
+    environment = env_info["environment"]
+
+    print(f"🚀 Iniciando inicialización de datos en entorno: {environment}")
+    print(f"📊 Base de datos: {env_info['database_url']}")
+
+    # Validar si es seguro inicializar datos
+    if not is_safe_for_data_initialization():
+        print(
+            f"❌ INICIALIZACIÓN BLOQUEADA: No es seguro inicializar datos en entorno '{environment}'")
+        print("💡 Para forzar la inicialización, establece FORCE_INIT_DATA=true")
+        print("💡 Solo se permite inicialización automática en entorno 'development'")
+        return
+
+    print(f"✅ Inicialización permitida en entorno: {environment}")
+
     session = Session(engine)
 
     try:
         # 1. Inicializar roles
+        print("📋 Inicializando roles...")
         init_roles()
 
         # 2. Inicializar tipos de documentos
+        print("📄 Inicializando tipos de documentos...")
         init_document_types()
 
         # 3. Inicializar tipos de vehículos
+        print("🚗 Inicializando tipos de vehículos...")
         init_vehicle_types(engine)
 
         # 4. Inicializar tipos de servicio
+        print("🔧 Inicializando tipos de servicio...")
         type_service_service = TypeServiceService(session)
         type_service_service.init_default_types()
 
         # 5. Inicializar valores de tiempo y distancia
+        print("⏱️ Inicializando valores de tiempo y distancia...")
         init_time_distance_values(engine)
 
         # 6. Inicializar configuración del proyecto
+        print("⚙️ Inicializando configuración del proyecto...")
         init_project_settings()
 
         # 7. Inicializar métodos de pago
+        print("💳 Inicializando métodos de pago...")
         init_payment_methods(session)
 
         # 8. Inicializar bancos
+        print("🏦 Inicializando bancos...")
         init_banks(session)
 
         # 9. Crear admin
+        print("👨‍💼 Creando administrador...")
         create_admin(session)
 
         # 10. Crear usuarios
+        print("👥 Creando usuarios...")
         users = create_all_users(session)
 
         # 11. Crear conductores
+        print("🚕 Creando conductores...")
         create_all_drivers(session, users)
 
         # 12. Crear solicitudes de clientes
+        print("📝 Creando solicitudes de clientes...")
         requests = create_client_requests(session, users, users['drivers'])
 
         # 13. Crear ofertas de conductores
+        print("💰 Creando ofertas de conductores...")
         create_driver_offers(session, users['drivers'], requests)
 
         # 15. Inicializar datos de referidos
+        print("🔗 Inicializando datos de referidos...")
         init_referral_data(session, users)
 
         # 14. Completar algunas solicitudes
+        print("✅ Completando solicitudes...")
         complete_some_requests(session, users['drivers'], requests)
 
         # 16. Crear posiciones de conductores
+        print("📍 Creando posiciones de conductores...")
         create_driver_positions(session, users['drivers'])
 
-        print("✅ Inicialización de datos completada exitosamente")
+        print(
+            f"🎉 Inicialización de datos completada exitosamente en entorno: {environment}")
 
     except Exception as e:
-        print("❌ Error en la inicialización:", str(e))
+        print(
+            f"❌ Error en la inicialización en entorno {environment}:", str(e))
         print(traceback.format_exc())
         raise
     finally:
