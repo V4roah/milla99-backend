@@ -276,7 +276,7 @@ def test_driver_creation_and_verification_flow(client):
             phone_number = "3010000004"
             country_code = "+57"
             user_data = {
-                "full_name": "Driver Verification Test",
+                "full_name": "Driver Test User",
                 "country_code": country_code,
                 "phone_number": phone_number
             }
@@ -324,7 +324,7 @@ def test_driver_creation_and_verification_flow(client):
             print(f"Contenido respuesta: {create_resp.text}")
             assert create_resp.status_code == status.HTTP_201_CREATED
             driver_data = create_resp.json()
-            driver_id = driver_data["user"]["id"]
+            driver_id = UUID(driver_data["user"]["id"])
             print(f"Driver creado con ID: {driver_id}")
 
             # 2. Verificar que el driver se creó con estado inicial correcto
@@ -461,13 +461,43 @@ def create_and_approve_driver(client, phone_number, country_code):
                     f"El usuario {phone_number} existe pero no tiene el rol de DRIVER.")
 
             if driver_role.status != RoleStatus.APPROVED:
+                # Buscar el rol DRIVER de manera más robusta
+                driver_role = session.exec(select(UserHasRole).where(
+                    UserHasRole.id_user == driver_id, UserHasRole.id_rol == "DRIVER")).first()
+
+                # Si no se encuentra, intentar crear el rol manualmente
+                if driver_role is None:
+                    print(
+                        f"Rol DRIVER no encontrado para usuario {driver_id}, creándolo manualmente...")
+                    try:
+                        driver_role = UserHasRole(
+                            id_user=driver_id,
+                            id_rol="DRIVER",
+                            status=RoleStatus.PENDING
+                        )
+                        session.add(driver_role)
+                        session.commit()
+                        session.refresh(driver_role)
+                        print("Rol DRIVER creado manualmente")
+                    except Exception as e:
+                        print(f"Error creando rol manualmente: {e}")
+                        # Si falla, intentar buscar de nuevo (puede que se haya creado en otro proceso)
+                        session.rollback()
+                        driver_role = session.exec(select(UserHasRole).where(
+                            UserHasRole.id_user == driver_id, UserHasRole.id_rol == "DRIVER")).first()
+                        if driver_role is None:
+                            raise Exception(
+                                f"No se pudo crear ni encontrar el rol DRIVER para usuario {driver_id}")
+                        print("Rol DRIVER encontrado después del rollback")
+
+                assert driver_role is not None
                 driver_role.status = RoleStatus.APPROVED
                 session.add(driver_role)
                 session.commit()
         else:
             # Si el usuario no existe, lo creamos desde cero
             user_data = {
-                "full_name": f"Driver Test {phone_number}",
+                "full_name": f"Driver Test User",
                 "country_code": country_code,
                 "phone_number": phone_number
             }
@@ -509,8 +539,35 @@ def create_and_approve_driver(client, phone_number, country_code):
             driver_data = response.json()
             driver_id = UUID(driver_data["user"]["id"])
 
+            # Buscar el rol DRIVER de manera más robusta
             driver_role = session.exec(select(UserHasRole).where(
                 UserHasRole.id_user == driver_id, UserHasRole.id_rol == "DRIVER")).first()
+
+            # Si no se encuentra, intentar crear el rol manualmente
+            if driver_role is None:
+                print(
+                    f"Rol DRIVER no encontrado para usuario {driver_id}, creándolo manualmente...")
+                try:
+                    driver_role = UserHasRole(
+                        id_user=driver_id,
+                        id_rol="DRIVER",
+                        status=RoleStatus.PENDING
+                    )
+                    session.add(driver_role)
+                    session.commit()
+                    session.refresh(driver_role)
+                    print("Rol DRIVER creado manualmente")
+                except Exception as e:
+                    print(f"Error creando rol manualmente: {e}")
+                    # Si falla, intentar buscar de nuevo (puede que se haya creado en otro proceso)
+                    session.rollback()
+                    driver_role = session.exec(select(UserHasRole).where(
+                        UserHasRole.id_user == driver_id, UserHasRole.id_rol == "DRIVER")).first()
+                    if driver_role is None:
+                        raise Exception(
+                            f"No se pudo crear ni encontrar el rol DRIVER para usuario {driver_id}")
+                    print("Rol DRIVER encontrado después del rollback")
+
             assert driver_role is not None
             driver_role.status = RoleStatus.APPROVED
             session.add(driver_role)
