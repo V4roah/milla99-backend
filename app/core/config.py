@@ -2,6 +2,7 @@ from pydantic_settings import BaseSettings
 from pydantic import ConfigDict
 from typing import List, Optional
 from functools import lru_cache
+import os
 
 
 class Settings(BaseSettings):
@@ -11,8 +12,8 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # Configuración de la base de datos
-    DATABASE_URL: str = "mysql+pymysql://root:root@localhost:3307/milla99"
-    TEST_DATABASE_URL: str = "mysql+pymysql://root:root@localhost:3307/milla99_test"
+    DATABASE_URL: str
+    TEST_DATABASE_URL: str
 
     # Configuración CORS
     CORS_ORIGINS: List[str] = ["*"]
@@ -62,10 +63,27 @@ class Settings(BaseSettings):
     FIREBASE_CLIENT_CERT_URL: Optional[str] = None
 
     model_config = ConfigDict(
-        env_file=".env",
+        env_file=".env",  # Por defecto, pero se sobreescribe abajo
         case_sensitive=True,
         extra="allow"  # Permitir campos extra en la configuración
     )
+
+    def __init__(self, **kwargs):
+        # Detectar el entorno automáticamente
+        environment = os.getenv("ENVIRONMENT", "development")
+
+        # Determinar qué archivo de configuración usar
+        if environment == "qa":
+            env_file = "env.qa"
+        elif environment == "production":
+            env_file = "env.production"
+        else:
+            env_file = ".env"  # Fallback al archivo original
+
+        # Configurar el archivo de entorno
+        kwargs["_env_file"] = env_file
+
+        super().__init__(**kwargs)
 
 
 @lru_cache()
