@@ -73,7 +73,7 @@ def test_update_me():
     headers = {"Authorization": f"Bearer {token}"}
     update_data = {"full_name": "User Updated"}
     patch_resp = client.patch(
-        "/users/me/update", json=update_data, headers=headers)
+        "/users/me/update", data=update_data, headers=headers)
     assert patch_resp.status_code == 200
     patch_data = patch_resp.json()
     assert patch_data["full_name"] == "User Updated"
