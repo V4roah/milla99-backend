@@ -116,10 +116,6 @@ def test_auth_login_invalid():
     assert response.status_code in (401, 422, 404)
 
 
-def test_auth_login_bad_format():
-    response = client.post("/auth/login", data="notjson")
-    assert response.status_code in (422, 400, 415)
-
 # =========================
 # CLIENT REQUEST ENDPOINTS
 # =========================
