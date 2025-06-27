@@ -4,12 +4,12 @@ from pydantic import constr, field_validator, ValidationInfo, BaseModel
 from enum import Enum
 import phonenumbers
 import re
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from app.models.user_has_roles import UserHasRole
 from app.models.driver_documents import DriverDocuments
-from datetime import datetime
 from sqlalchemy.orm import relationship
 from uuid import UUID, uuid4
+import pytz
 
 
 # Custom validated types
@@ -38,11 +38,11 @@ class User(UserBase, table=True):
         default_factory=uuid4, primary_key=True, unique=True)
     selfie_url: Optional[str] = None
     created_at: datetime = Field(
-        default_factory=datetime.utcnow, nullable=False)
+        default_factory=lambda: datetime.now(COLOMBIA_TZ), nullable=False)
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(COLOMBIA_TZ),
         nullable=False,
-        sa_column_kwargs={"onupdate": datetime.utcnow}
+        sa_column_kwargs={"onupdate": lambda: datetime.now(COLOMBIA_TZ)}
     )
 
     # Relaciones
@@ -195,3 +195,6 @@ class UserResponse(UserBase):
 
     class Config:
         from_attributes = True
+
+
+COLOMBIA_TZ = pytz.timezone("America/Bogota")

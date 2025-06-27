@@ -5,8 +5,10 @@ from typing import Optional
 from enum import Enum
 from pydantic import field_validator
 from uuid import UUID, uuid4
+import pytz
 
 # Definimos el enum para el status
+
 
 class DriverStatus(str, Enum):
     PENDING = "pending"
@@ -26,15 +28,18 @@ class DriverDocumentsBase(SQLModel):
 
 class DriverDocuments(DriverDocumentsBase, table=True):
     __tablename__ = "driver_documents"
-    id: Optional[UUID] = Field(default_factory=uuid4, primary_key=True, unique=True)
+    id: Optional[UUID] = Field(
+        default_factory=uuid4, primary_key=True, unique=True)
     driver_info_id: UUID = Field(foreign_key="driver_info.id", nullable=False)
     vehicle_info_id: Optional[UUID] = Field(
         default=None, foreign_key="vehicle_info.id", nullable=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(
+        pytz.timezone("America/Bogota")), nullable=False)
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(pytz.timezone("America/Bogota")),
         nullable=False,
-        sa_column_kwargs={"onupdate": datetime.utcnow}
+        sa_column_kwargs={"onupdate": lambda: datetime.now(
+            pytz.timezone("America/Bogota"))}
     )
     # Relaciones
     driver_info: "DriverInfo" = Relationship(back_populates="documents")
@@ -75,6 +80,7 @@ class DriverDocumentsUpdate(SQLModel):
     document_back_url: Optional[str] = None
     status: Optional[DriverStatus] = None
     expiration_date: Optional[datetime] = None
+
 
 class DocumentsUpdate (SQLModel):
     id: UUID

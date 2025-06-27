@@ -3,6 +3,10 @@ from datetime import datetime
 from sqlmodel import SQLModel, Field
 from pydantic import BaseModel
 from sqlmodel import SQLModel, Field, Relationship, Column, Integer, ForeignKey
+import pytz
+
+COLOMBIA_TZ = pytz.timezone("America/Bogota")
+
 
 class ConfigServiceValue(SQLModel, table=True):
     __tablename__ = "config_service_value"
@@ -20,15 +24,18 @@ class ConfigServiceValue(SQLModel, table=True):
             nullable=False
         )
     )
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(COLOMBIA_TZ), nullable=False)
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(COLOMBIA_TZ),
         nullable=False,
-        sa_column_kwargs={"onupdate": datetime.utcnow}
+        sa_column_kwargs={"onupdate": lambda: datetime.now(COLOMBIA_TZ)}
     )
 
     # Relaciones
-    type_service: Optional["TypeService"] = Relationship(back_populates="config_service_value")
+    type_service: Optional["TypeService"] = Relationship(
+        back_populates="config_service_value")
+
 
 class CalculateFareRequest(BaseModel):
     type_vehicle_id: int
@@ -38,6 +45,8 @@ class CalculateFareRequest(BaseModel):
     destination_lng: float
 
 # Modelo para la respuesta
+
+
 class FareCalculationResponse(BaseModel):
     recommended_value: float
     destination_addresses: str
@@ -52,11 +61,13 @@ class VehicleTypeConfigurationCreate(BaseModel):
     tarifa_value: Optional[float] = None
     weight_value: Optional[float] = None
 
+
 class VehicleTypeConfigurationUpdate(BaseModel):
     km_value: Optional[float] = None
     min_value: Optional[float] = None
     tarifa_value: Optional[float] = None
     weight_value: Optional[float] = None
+
 
 class VehicleTypeConfigurationResponse(BaseModel):
     id: int

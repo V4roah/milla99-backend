@@ -3,6 +3,7 @@ from sqlalchemy import Column, String
 from typing import Optional, TYPE_CHECKING, List
 from datetime import date, datetime
 from uuid import UUID, uuid4
+import pytz
 
 if TYPE_CHECKING:
     from .user import User
@@ -17,20 +18,24 @@ class DriverInfoBase(SQLModel):
     email: Optional[str] = None
     # selfie_url: Optional[str] = None  # Eliminado, ahora está en User
 
+
 class DriverInfo(DriverInfoBase, table=True):
     __tablename__ = "driver_info"
-    id: Optional[UUID] = Field(default_factory=uuid4, primary_key=True, unique=True)
+    id: Optional[UUID] = Field(
+        default_factory=uuid4, primary_key=True, unique=True)
     user_id: UUID = Field(foreign_key="user.id")
     user: Optional["User"] = Relationship(back_populates="driver_info")
     vehicle_info: Optional["VehicleInfo"] = Relationship(
         back_populates="driver_info")
     documents: List["DriverDocuments"] = Relationship(
         back_populates="driver_info")
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(
+        pytz.timezone("America/Bogota")), nullable=False)
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(pytz.timezone("America/Bogota")),
         nullable=False,
-        sa_column_kwargs={"onupdate": datetime.utcnow}
+        sa_column_kwargs={"onupdate": lambda: datetime.now(
+            pytz.timezone("America/Bogota"))}
     )
 
 
