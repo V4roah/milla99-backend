@@ -1,6 +1,11 @@
 from fastapi import status
 from fastapi.testclient import TestClient
 from app.main import app
+from datetime import datetime
+from sqlmodel import Session, select
+from app.models.user_has_roles import UserHasRole, RoleStatus
+from app.models.role import Role
+import time
 
 client = TestClient(app)
 
@@ -25,8 +30,11 @@ def test_create_user():
 
 
 def test_get_me():
+    # Usar timestamp para hacer el número único
+    timestamp = int(time.time()) % 10000000  # 7 dígitos del timestamp
     country_code = "+57"
-    phone_number = "3011234581"
+    # Formato: 300 + 7 dígitos = 10 dígitos total
+    phone_number = f"300{timestamp:07d}"
     user_data = {
         "full_name": "User Me",
         "country_code": country_code,
@@ -49,11 +57,76 @@ def test_get_me():
     me_data = me_resp.json()
     assert me_data["phone_number"] == phone_number
     assert me_data["full_name"] == "User Me"
+    # Verificar que el nuevo campo is_driver_approved esté presente
+    assert "is_driver_approved" in me_data
+    # Para un usuario recién creado con solo rol CLIENT, debe ser None
+    assert me_data["is_driver_approved"] is None
+
+
+def test_get_me_driver_approved():
+    """Test para verificar que is_driver_approved sea True cuando el usuario tiene rol DRIVER aprobado"""
+    # Usar timestamp para hacer el número único
+    timestamp = int(time.time()) % 10000000  # 7 dígitos del timestamp
+    country_code = "+57"
+    # Formato: 301 + 7 dígitos = 10 dígitos total
+    phone_number = f"301{timestamp:07d}"
+    user_data = {
+        "full_name": "Driver User",
+        "country_code": country_code,
+        "phone_number": phone_number
+    }
+
+    # Crear usuario
+    response = client.post("/users/", json=user_data)
+    assert response.status_code == 201
+    user_id = response.json()["id"]
+
+    # Verificar usuario
+    send_resp = client.post(f"/auth/verify/{country_code}/{phone_number}/send")
+    assert send_resp.status_code == 201
+    code = send_resp.json()["message"].split()[-1]
+    verify_resp = client.post(
+        f"/auth/verify/{country_code}/{phone_number}/code",
+        json={"code": code}
+    )
+    assert verify_resp.status_code == 200
+    token = verify_resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Simular que el usuario tiene rol DRIVER aprobado (manipulación directa de BD)
+    with Session(client.app.state.engine) as session:
+        # Buscar el rol DRIVER
+        driver_role = session.exec(
+            select(Role).where(Role.id == "DRIVER")).first()
+        assert driver_role is not None
+
+        # Crear la relación UserHasRole con status APPROVED
+        user_role = UserHasRole(
+            id_user=user_id,
+            id_rol="DRIVER",
+            is_verified=True,
+            status=RoleStatus.APPROVED,
+            verified_at=datetime.utcnow()
+        )
+        session.add(user_role)
+        session.commit()
+
+    # Ahora llamar a /users/me y verificar que is_driver_approved sea True
+    me_resp = client.get("/users/me", headers=headers)
+    assert me_resp.status_code == 200
+    me_data = me_resp.json()
+    assert me_data["phone_number"] == phone_number
+    assert me_data["full_name"] == "Driver User"
+    assert "is_driver_approved" in me_data
+    assert me_data["is_driver_approved"] is True
 
 
 def test_update_me():
+    # Usar timestamp para hacer el número único
+    timestamp = int(time.time()) % 10000000  # 7 dígitos del timestamp
     country_code = "+57"
-    phone_number = "3011234582"
+    # Formato: 302 + 7 dígitos = 10 dígitos total
+    phone_number = f"302{timestamp:07d}"
     user_data = {
         "full_name": "User Update",
         "country_code": country_code,
