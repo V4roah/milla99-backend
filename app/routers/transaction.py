@@ -4,7 +4,9 @@ from app.core.db import SessionDep
 from app.services.transaction_service import TransactionService
 from app.models.transaction import TransactionType, TransactionCreate
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+from uuid import UUID
+from datetime import datetime
 
 bearer_scheme = HTTPBearer()
 
@@ -25,25 +27,17 @@ class BalanceResponse(BaseModel):
 
 
 class TransactionResponse(BaseModel):
-    id: str = Field(..., description="ID único de la transacción",
-                    example="550e8400-e29b-41d4-a716-446655440000")
-    user_id: str = Field(..., description="ID del usuario propietario",
-                         example="550e8400-e29b-41d4-a716-446655440001")
-    income: int = Field(...,
-                        description="Monto de ingreso (0 si es egreso)", example=21250)
-    expense: int = Field(...,
-                         description="Monto de egreso (0 si es ingreso)", example=0)
-    type: str = Field(..., description="Tipo de transacción",
-                      example="SERVICE")
-    client_request_id: str = Field(
-        None, description="ID de la solicitud asociada", example="550e8400-e29b-41d4-a716-446655440002"
-    )
-    is_confirmed: bool = Field(...,
-                               description="Estado de confirmación", example=True)
-    date: str = Field(..., description="Fecha de la transacción",
-                      example="2025-01-15T14:30:00")
-    description: str = Field(None, description="Descripción de la transacción",
-                             example="Ingreso por servicio del viaje 550e8400-e29b-41d4-a716-446655440002")
+    id: UUID = Field(..., description="ID único de la transacción")
+    user_id: UUID = Field(..., description="ID del usuario propietario")
+    income: int = Field(..., description="Monto de ingreso (0 si es egreso)")
+    expense: int = Field(..., description="Monto de egreso (0 si es ingreso)")
+    type: str = Field(..., description="Tipo de transacción")
+    client_request_id: Optional[UUID] = Field(
+        None, description="ID de la solicitud asociada")
+    is_confirmed: bool = Field(..., description="Estado de confirmación")
+    date: datetime = Field(..., description="Fecha de la transacción")
+    description: Optional[str] = Field(
+        None, description="Descripción de la transacción")
 
 
 @router.get(
@@ -101,9 +95,9 @@ class TransactionResponse(BaseModel):
 )
 def get_my_balance(
     request: Request,
-                    session: SessionDep,
-                    credentials: HTTPAuthorizationCredentials = Security(bearer_scheme)
-                    ):
+    session: SessionDep,
+    credentials: HTTPAuthorizationCredentials = Security(bearer_scheme)
+):
     """
     Obtiene el saldo completo del usuario autenticado.
     """
@@ -197,9 +191,9 @@ def get_my_balance(
 )
 def list_my_transactions(
     request: Request,
-                        session: SessionDep,
-                        credentials: HTTPAuthorizationCredentials = Security(bearer_scheme)
-                        ):
+    session: SessionDep,
+    credentials: HTTPAuthorizationCredentials = Security(bearer_scheme)
+):
     """
     Lista todas las transacciones del usuario autenticado.
     """
