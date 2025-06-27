@@ -8,6 +8,7 @@ from geoalchemy2 import Geometry
 from uuid import UUID, uuid4
 from sqlalchemy.orm import Session
 from sqlalchemy import inspect
+import pytz
 
 # Modelo de entrada (lo que el usuario envía)
 
@@ -75,11 +76,12 @@ class ClientRequest(SQLModel, table=True):
     destination_position: Optional[object] = Field(
         sa_column=Column(Geometry(geometry_type="POINT", srid=4326)))
     created_at: datetime = Field(
-        default_factory=datetime.utcnow, nullable=False)
+        default_factory=lambda: datetime.now(pytz.timezone("America/Bogota")), nullable=False)
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(pytz.timezone("America/Bogota")),
         nullable=False,
-        sa_column_kwargs={"onupdate": datetime.utcnow}
+        sa_column_kwargs={"onupdate": lambda: datetime.now(
+            pytz.timezone("America/Bogota"))}
     )
 
     # Relaciones explícitas
