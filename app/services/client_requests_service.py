@@ -117,7 +117,6 @@ def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session,
         base_query = base_query.filter(
             ClientRequest.type_service_id.in_(type_service_ids))
 
-    # Agregar print de la consulta SQL
     print(f"[DEBUG] Query SQL: {str(base_query)}")
 
     base_query = base_query.having(text(f"distance < {distance_limit}"))
@@ -136,13 +135,46 @@ def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session,
         destination_address = get_address_from_coords(
             destination_coords['lat'], destination_coords['lng']) if destination_coords else "No disponible"
 
-        print(f"[DEBUG] Solicitud {cr.id}:")
-        print(
-            f"  - Coordenadas: lat={pickup_coords['lat']}, lng={pickup_coords['lng']}")
-        print(
-            f"  - Distancia calculada: {float(distance) if distance is not None else None} metros")
-        print(
-            f"  - Diferencia de latitud con conductor: {abs(float(pickup_coords['lat']) - driver_lat)} grados")
+        # Obtener método de pago
+        payment_method_obj = None
+        if cr.payment_method_id:
+            payment_method_obj = session.query(PaymentMethod).filter(
+                PaymentMethod.id == cr.payment_method_id).first()
+        payment_method = None
+        if payment_method_obj:
+            payment_method = {
+                "id": payment_method_obj.id,
+                "name": payment_method_obj.name
+            }
+
+        # Calcular distancia y tiempo del trayecto del cliente (origen -> destino)
+        distance_trip = None
+        duration_trip = None
+        distance_trip_text = None
+        duration_trip_text = None
+        if pickup_coords and destination_coords:
+            url = "https://maps.googleapis.com/maps/api/distancematrix/json"
+            params = {
+                "origins": f"{pickup_coords['lat']},{pickup_coords['lng']}",
+                "destinations": f"{destination_coords['lat']},{destination_coords['lng']}",
+                "units": "metric",
+                "key": settings.GOOGLE_API_KEY,
+                "mode": "driving"
+            }
+            try:
+                response = requests.get(url, params=params)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("status") == "OK" and data["rows"][0]["elements"][0]["status"] == "OK":
+                        element = data["rows"][0]["elements"][0]
+                        distance_trip = element["distance"]["value"]
+                        duration_trip = element["duration"]["value"]
+                        distance_trip_text = element["distance"]["text"]
+                        duration_trip_text = element["duration"]["text"]
+            except Exception as e:
+                print(
+                    f"[ERROR] Google Distance Matrix (trayecto cliente): {e}")
+
         average_rating = get_average_rating(
             session, "passenger", cr.id_client) if cr.id_client else 0.0
         result = {
@@ -168,7 +200,12 @@ def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session,
                 "country_code": country_code,
                 "phone_number": phone_number,
                 "average_rating": average_rating
-            }
+            },
+            "payment_method": payment_method,
+            "distance_trip": distance_trip,
+            "duration_trip": duration_trip,
+            "distance_trip_text": distance_trip_text,
+            "duration_trip_text": duration_trip_text
         }
         results.append(result)
     return results
