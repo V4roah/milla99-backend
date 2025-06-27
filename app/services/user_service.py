@@ -1,5 +1,5 @@
 from sqlmodel import Session, select
-from app.models.user import User, UserCreate, UserUpdate
+from app.models.user import User, UserCreate, UserUpdate, UserRead
 from app.models.role import Role
 from app.models.user_has_roles import UserHasRole, RoleStatus
 from app.models.referral_chain import Referral
@@ -134,13 +134,51 @@ class UserService:
         return self.session.exec(select(User)).all()
 
     def get_user(self, user_id: UUID) -> User:
-        user = self.session.get(User, user_id)
+        # Cargar el usuario con sus relaciones
+        user = self.session.exec(
+            select(User)
+            .options(selectinload(User.roles), selectinload(User.driver_info))
+            .where(User.id == user_id)
+        ).first()
+
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found"
             )
-        return user
+        # Consultar si el usuario tiene el rol DRIVER aprobado
+        driver_role = self.session.exec(
+            select(UserHasRole).where(
+                UserHasRole.id_user == user_id,
+                UserHasRole.id_rol == "DRIVER",
+                UserHasRole.status == RoleStatus.APPROVED
+            )
+        ).first()
+
+        # También consultar si tiene rol DRIVER (aprobado o no)
+        has_driver_role = self.session.exec(
+            select(UserHasRole).where(
+                UserHasRole.id_user == user_id,
+                UserHasRole.id_rol == "DRIVER"
+            )
+        ).first()
+
+        # Construir manualmente el diccionario con todos los campos necesarios
+        user_dict = {
+            "id": user.id,
+            "country_code": user.country_code,
+            "phone_number": user.phone_number,
+            "is_verified_phone": user.is_verified_phone,
+            "is_active": user.is_active,
+            "full_name": user.full_name,
+            "selfie_url": user.selfie_url,
+            "roles": user.roles,  # Incluir los roles cargados
+            "driver_info": user.driver_info,  # Incluir driver_info cargado
+            "is_driver_approved": bool(driver_role) if has_driver_role else None
+        }
+
+        # Usar UserRead para la respuesta
+        return UserRead.model_validate(user_dict, from_attributes=True)
 
     def update_user(self, user_id: UUID, user_data: UserUpdate) -> User:
         user = self.get_user(user_id)

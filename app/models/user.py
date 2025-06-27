@@ -67,9 +67,10 @@ class User(UserBase, table=True):
     withdrawals: List["Withdrawal"] = Relationship(back_populates="user")
     penalities: List["PenalityUser"] = Relationship(
         back_populates="user",
-        sa_relationship_kwargs={"foreign_keys": "PenalityUser.id_user"}  
+        sa_relationship_kwargs={"foreign_keys": "PenalityUser.id_user"}
     )
     refresh_tokens: List["RefreshToken"] = Relationship(back_populates="user")
+
 
 class UserCreate(SQLModel):
 
@@ -170,6 +171,7 @@ class UserRead(BaseModel):
     selfie_url: Optional[str] = None
     roles: List[RoleRead]
     driver_info: Optional[DriverInfoRead] = None
+    is_driver_approved: Optional[bool] = None
 
     class Config:
         from_attributes = True
