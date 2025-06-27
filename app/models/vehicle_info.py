@@ -4,10 +4,14 @@ from datetime import date, datetime
 from enum import Enum
 from .vehicle_type import VehicleType
 from uuid import UUID, uuid4
+import pytz
 
 if TYPE_CHECKING:
     from .driver_info import DriverInfo
     from .driver_documents import DriverDocuments
+
+
+COLOMBIA_TZ = pytz.timezone("America/Bogota")
 
 
 class VehicleInfoBase(SQLModel):
@@ -21,12 +25,14 @@ class VehicleInfoBase(SQLModel):
 
 class VehicleInfo(VehicleInfoBase, table=True):
     __tablename__ = "vehicle_info"
-    id: Optional[UUID] = Field(default_factory=uuid4, primary_key=True, unique=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    id: Optional[UUID] = Field(
+        default_factory=uuid4, primary_key=True, unique=True)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(COLOMBIA_TZ), nullable=False)
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(COLOMBIA_TZ),
         nullable=False,
-        sa_column_kwargs={"onupdate": datetime.utcnow}
+        sa_column_kwargs={"onupdate": lambda: datetime.now(COLOMBIA_TZ)}
     )
 
     # Relaciones
@@ -34,7 +40,8 @@ class VehicleInfo(VehicleInfoBase, table=True):
     driver_info: Optional["DriverInfo"] = Relationship(
         back_populates="vehicle_info")
     vehicle_type: VehicleType = Relationship(back_populates="vehicles")
-    driver_documents: List["DriverDocuments"] = Relationship(back_populates="vehicle_info")
+    driver_documents: List["DriverDocuments"] = Relationship(
+        back_populates="vehicle_info")
 
 
 class VehicleInfoCreate(VehicleInfoBase):

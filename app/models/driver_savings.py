@@ -5,6 +5,7 @@ from enum import Enum
 from datetime import datetime
 from sqlalchemy.orm import relationship
 from uuid import UUID, uuid4
+import pytz
 
 if TYPE_CHECKING:
     from .user import User
@@ -30,9 +31,12 @@ class DriverSavings(SQLModel, table=True):
 
 
 # Evento para before_insert - se ejecuta antes de crear un registro
+COLOMBIA_TZ = pytz.timezone("America/Bogota")
+
+
 @event.listens_for(DriverSavings, 'before_insert')
 def set_created_at(mapper, connection, target):
-    now = datetime.utcnow()
+    now = datetime.now(COLOMBIA_TZ)
     if target.created_at is None:
         target.created_at = now
     target.updated_at = now
@@ -41,4 +45,4 @@ def set_created_at(mapper, connection, target):
 # Evento para before_update - se ejecuta antes de actualizar un registro
 @event.listens_for(DriverSavings, 'before_update')
 def set_updated_at(mapper, connection, target):
-    target.updated_at = datetime.utcnow()
+    target.updated_at = datetime.now(COLOMBIA_TZ)
