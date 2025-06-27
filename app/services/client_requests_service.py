@@ -28,8 +28,11 @@ from app.services.transaction_service import TransactionService
 from app.models.transaction import TransactionType
 from app.services.notification_service import NotificationService
 import logging
+import pytz
 
 logger = logging.getLogger(__name__)
+
+COLOMBIA_TZ = pytz.timezone("America/Bogota")
 
 
 def create_client_request(db: Session, data: ClientRequestCreate, id_client: UUID):
@@ -85,8 +88,7 @@ def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session,
     project_settings = session.query(ProjectSettings).first()
     timeout_minutes = project_settings.request_timeout_minutes if project_settings else 5
 
-    time_limit = datetime.now(timezone.utc) - \
-        timedelta(minutes=timeout_minutes)
+    time_limit = datetime.now(COLOMBIA_TZ) - timedelta(minutes=timeout_minutes)
     distance_limit = 4000
     print(
         f"[DEBUG] Límite de distancia configurado: {distance_limit} metros (1.35km)")
@@ -103,7 +105,7 @@ def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session,
             func.timestampdiff(
                 text('MINUTE'),
                 ClientRequest.created_at,
-                func.utc_timestamp()
+                func.now()  # Hora local del servidor MySQL
             ).label("time_difference")
         )
         .join(User, User.id == ClientRequest.id_client)
