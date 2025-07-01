@@ -118,6 +118,8 @@ class ClientRequest(SQLModel, table=True):
 
 def after_update_listener(mapper, connection, target):
     from app.services.earnings_service import distribute_earnings  # Import aquí, no arriba
+    # Import aquí, no arriba
+    from app.services.chat_service import cleanup_chat_messages_for_request
     # Obtener el estado del objeto para verificar cambios
     state = inspect(target)
     attr = state.attrs.status
@@ -128,9 +130,14 @@ def after_update_listener(mapper, connection, target):
         if new_value == StatusEnum.PAID and old_value != StatusEnum.PAID:
             session = Session(bind=connection)
             try:
+                # Distribuir ganancias
                 distribute_earnings(session, target)
+                # Limpiar mensajes de chat automáticamente
+                cleanup_chat_messages_for_request(session, target.id)
+                print(
+                    f"✅ Chat messages eliminados automáticamente para ClientRequest {target.id} (status: PAID)")
             except Exception as e:
-                print(f"Error en distribute_earnings: {e}")
+                print(f"Error en after_update_listener: {e}")
                 raise
 
 

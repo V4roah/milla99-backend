@@ -12,8 +12,20 @@ COLOMBIA_TZ = pytz.timezone("America/Bogota")
 
 def create_chat_message(session: Session, sender_id: UUID, message_data: ChatMessageCreate) -> ChatMessage:
     """
-    Crea un nuevo mensaje de chat y lo guarda en la base de datos
+    Crea un nuevo mensaje de chat y lo guarda en la base de datos.
+    Solo permite mensajes si el ClientRequest no está en estado PAID.
     """
+    # Verificar que el ClientRequest no esté completado
+    client_request = session.get(ClientRequest, message_data.client_request_id)
+    if not client_request:
+        raise ValueError("Solicitud de viaje no encontrada")
+
+    if client_request.status == "PAID":
+        raise ValueError("No se pueden enviar mensajes en un viaje completado")
+
+    if client_request.status == "CANCELLED":
+        raise ValueError("No se pueden enviar mensajes en un viaje cancelado")
+
     chat_message = ChatMessage(
         sender_id=sender_id,
         receiver_id=message_data.receiver_id,
@@ -31,7 +43,8 @@ def create_chat_message(session: Session, sender_id: UUID, message_data: ChatMes
 
 def get_conversation_messages(session: Session, client_request_id: UUID, user_id: UUID) -> List[ChatMessage]:
     """
-    Obtiene todos los mensajes de una conversación específica
+    Obtiene todos los mensajes de una conversación específica.
+    Si el ClientRequest está en estado PAID, retorna lista vacía.
     """
     # Verificar que el usuario tiene acceso a esta conversación
     client_request = session.get(ClientRequest, client_request_id)
@@ -40,6 +53,10 @@ def get_conversation_messages(session: Session, client_request_id: UUID, user_id
 
     if client_request.id_client != user_id and client_request.id_driver_assigned != user_id:
         raise ValueError("No tienes acceso a esta conversación")
+
+    # Si el viaje está completado, no hay mensajes
+    if client_request.status == "PAID":
+        return []
 
     # Obtener mensajes ordenados por fecha de creación
     statement = select(ChatMessage).where(
@@ -178,6 +195,34 @@ def cleanup_expired_messages(session: Session) -> int:
     count = len(expired_messages)
 
     for message in expired_messages:
+        session.delete(message)
+
+    session.commit()
+
+    return count
+
+
+def cleanup_chat_messages_for_request(session: Session, client_request_id: UUID) -> int:
+    """
+    Elimina todos los mensajes de chat de una solicitud específica.
+    Se usa cuando el ClientRequest cambia a estado PAID.
+    Retorna el número de mensajes eliminados
+    """
+    statement = select(ChatMessage).where(
+        ChatMessage.client_request_id == client_request_id
+    )
+
+    # Verificar si es una sesión de SQLModel o SQLAlchemy
+    if hasattr(session, 'exec'):
+        # Es una sesión de SQLModel
+        messages = session.exec(statement).all()
+    else:
+        # Es una sesión de SQLAlchemy
+        messages = session.execute(statement).scalars().all()
+
+    count = len(messages)
+
+    for message in messages:
         session.delete(message)
 
     session.commit()

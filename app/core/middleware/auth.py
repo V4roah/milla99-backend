@@ -15,7 +15,8 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             ("/users/", "GET"),  # Solo el registro de usuarios
             ("/auth/verify/", "POST"),  # Rutas de verificación
             ("/auth/refresh", "POST"),  # Permitir refresh token sin autenticación
-            ("/auth/logout", "POST"),  # Permitir logout (revocación de refresh token) sin autenticación
+            # Permitir logout (revocación de refresh token) sin autenticación
+            ("/auth/logout", "POST"),
             ("/docs", "GET"),  # Documentación
             ("/openapi.json", "GET"),  # Esquema OpenAPI
             ("/drivers/", "POST"),  # creacion de drivers
@@ -52,24 +53,36 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         # Para el resto de rutas, verificar token
         try:
             auth_header = request.headers.get("Authorization")
+            print(
+                f"🔍 DEBUG MIDDLEWARE: Ruta: {request.url.path}, Auth header: {auth_header}")
+
             if not auth_header or not auth_header.startswith("Bearer "):
+                print(f"❌ DEBUG MIDDLEWARE: No hay Authorization header válido")
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "No se proporcionó token de autenticación"}
                 )
 
             token = auth_header.split(" ")[1]
+            print(f"🔍 DEBUG MIDDLEWARE: Token extraído: {token[:20]}...")
+
             payload = jwt.decode(token, settings.SECRET_KEY,
                                  algorithms=[settings.ALGORITHM])
+            print(f"🔍 DEBUG MIDDLEWARE: Payload decodificado: {payload}")
+
             user_id = payload.get("sub")
+            print(f"🔍 DEBUG MIDDLEWARE: User ID extraído: {user_id}")
 
             if not user_id:
+                print(f"❌ DEBUG MIDDLEWARE: No hay user_id en el token")
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "Token inválido"}
                 )
 
             request.state.user_id = UUID(user_id)
+            print(
+                f"✅ DEBUG MIDDLEWARE: User ID asignado a request.state: {request.state.user_id}")
 
         except JWTError:
             return JSONResponse(

@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from uuid import UUID
 from typing import List
 import traceback
+from sqlalchemy.sql import select
 
 router = APIRouter(
     prefix="/chat",
@@ -229,38 +230,3 @@ def get_conversation_unread_count(
         print(traceback.format_exc())
         raise HTTPException(
             status_code=500, detail=f"Error al obtener conteo de mensajes: {str(e)}")
-
-
-@router.delete("/cleanup", tags=["Admin"], description="""
-Elimina mensajes expirados (más de 30 días). Solo para administradores.
-
-**Respuesta:**
-Devuelve el número de mensajes eliminados.
-""")
-def cleanup_messages(
-    request: Request,
-    session: SessionDep
-):
-    """
-    Elimina mensajes expirados
-    """
-    try:
-        # Verificar que es admin (esto debería estar en un middleware)
-        # Por ahora lo dejamos abierto para testing
-
-        # Limpiar mensajes expirados
-        count = cleanup_expired_messages(session)
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "message": f"Se eliminaron {count} mensajes expirados",
-                "count": count
-            }
-        )
-
-    except Exception as e:
-        print(f"[ERROR] Exception en cleanup_messages: {str(e)}")
-        print(traceback.format_exc())
-        raise HTTPException(
-            status_code=500, detail=f"Error al limpiar mensajes: {str(e)}")

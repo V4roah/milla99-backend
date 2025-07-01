@@ -30,6 +30,8 @@ static/
 
 app/load_tests/response/
 
+# Tests con datos sensibles (admin)
+app/test/test_admin_chat.py
 
 # Entornos
 env.qa
