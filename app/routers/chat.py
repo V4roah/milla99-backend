@@ -7,8 +7,7 @@ from app.services.chat_service import (
     create_chat_message,
     get_conversation_messages,
     mark_messages_as_read,
-    get_unread_count,
-    cleanup_expired_messages
+    get_unread_count
 )
 from sqlalchemy.orm import Session
 from uuid import UUID
