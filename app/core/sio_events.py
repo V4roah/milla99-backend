@@ -1,10 +1,11 @@
 import socketio
 import json
 from datetime import datetime
-from app.services.chat_service import create_chat_message, get_unread_count_for_conversation
-from app.models.chat_message import ChatMessageCreate, MessageStatus
-from app.core.db import get_session
 from uuid import UUID
+from app.services.chat_service import create_chat_message, get_unread_count
+from app.models.chat_message import ChatMessageCreate
+from app.core.db import get_session
+from app.core.sio import sio
 
 # Configura Redis como message manager
 mgr = socketio.AsyncRedisManager('redis://localhost:6379/0')
@@ -177,11 +178,14 @@ async def client_to_driver_message(sid, data):
             session, UUID(data["client_id"]), message_data)
 
         # Obtener conteo de mensajes no leídos
-        unread_count = get_unread_count_for_conversation(
-            session,
-            UUID(data["id_client_request"]),
-            UUID(data["id_driver"])
-        )
+        unread_counts = get_unread_count(session, UUID(data["id_driver"]))
+
+        # Buscar el contador específico para esta conversación
+        unread_count = 0
+        for count_info in unread_counts:
+            if str(count_info.conversation_id) == data["id_client_request"]:
+                unread_count = count_info.unread_count
+                break
 
         # Emitir el mensaje al conductor específico con información adicional
         await sio.emit(
@@ -271,11 +275,14 @@ async def driver_to_client_message(sid, data):
             session, UUID(data["driver_id"]), message_data)
 
         # Obtener conteo de mensajes no leídos
-        unread_count = get_unread_count_for_conversation(
-            session,
-            UUID(data["id_client_request"]),
-            UUID(data["id_client"])
-        )
+        unread_counts = get_unread_count(session, UUID(data["id_client"]))
+
+        # Buscar el contador específico para esta conversación
+        unread_count = 0
+        for count_info in unread_counts:
+            if str(count_info.conversation_id) == data["id_client_request"]:
+                unread_count = count_info.unread_count
+                break
 
         # Emitir el mensaje al cliente específico con información adicional
         await sio.emit(

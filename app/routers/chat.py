@@ -8,7 +8,6 @@ from app.services.chat_service import (
     get_conversation_messages,
     mark_messages_as_read,
     get_unread_count,
-    get_unread_count_for_conversation,
     cleanup_expired_messages
 )
 from sqlalchemy.orm import Session
@@ -24,15 +23,44 @@ router = APIRouter(
 
 
 @router.post("/send", response_model=ChatMessageRead, status_code=status.HTTP_201_CREATED, tags=["Chat"], description="""
-Envía un mensaje de chat a otro usuario en el contexto de una solicitud de viaje.
+📤 **ENVIAR MENSAJE DE CHAT**
+
+**Propósito:** Envía un mensaje de chat a otro usuario en el contexto de una solicitud de viaje específica.
+
+**Casos de Uso:**
+- Cliente envía mensaje al conductor asignado
+- Conductor envía mensaje al cliente
+- Comunicación durante el viaje activo
+
+**Validaciones:**
+- Solo se pueden enviar mensajes si el viaje NO está completado (PAID)
+- Solo se pueden enviar mensajes si el viaje NO está cancelado (CANCELLED)
+- El usuario debe ser participante del viaje (cliente o conductor asignado)
+- Máximo 500 caracteres por mensaje
 
 **Parámetros:**
-- `receiver_id`: ID del usuario que recibe el mensaje
-- `client_request_id`: ID de la solicitud de viaje
+- `receiver_id`: UUID del usuario que recibe el mensaje
+- `client_request_id`: UUID de la solicitud de viaje
 - `message`: Contenido del mensaje (máximo 500 caracteres)
 
-**Respuesta:**
-Devuelve el mensaje creado con toda su información.
+**Respuesta Exitosa (201):**
+```json
+{
+  "id": "uuid-del-mensaje",
+  "sender_id": "uuid-del-remitente",
+  "receiver_id": "uuid-del-destinatario", 
+  "client_request_id": "uuid-de-la-solicitud",
+  "message": "Hola, ¿dónde estás?",
+  "status": "SENT",
+  "is_read": false,
+  "created_at": "2025-01-01T10:00:00"
+}
+```
+
+**Errores Posibles:**
+- `400`: Viaje completado, cancelado o usuario no autorizado
+- `401`: Token de autenticación inválido
+- `500`: Error interno del servidor
 """)
 def send_message(
     request: Request,
@@ -72,13 +100,53 @@ def send_message(
 
 
 @router.get("/conversation/{client_request_id}", response_model=List[ChatMessageRead], tags=["Chat"], description="""
-Obtiene todos los mensajes de una conversación específica.
+💬 **OBTENER CONVERSACIÓN COMPLETA**
+
+**Propósito:** Obtiene todos los mensajes de una conversación específica entre cliente y conductor.
+
+**Casos de Uso:**
+- Cargar historial de mensajes al abrir el chat
+- Mostrar conversación completa en la UI
+- Sincronizar mensajes después de reconexión
+
+**Validaciones:**
+- El usuario debe ser participante del viaje (cliente o conductor asignado)
+- Si el viaje está completado (PAID), retorna lista vacía
+- Los mensajes se ordenan por fecha de creación (más antiguos primero)
 
 **Parámetros:**
-- `client_request_id`: ID de la solicitud de viaje
+- `client_request_id`: UUID de la solicitud de viaje
 
-**Respuesta:**
-Devuelve una lista de todos los mensajes de la conversación ordenados por fecha de creación.
+**Respuesta Exitosa (200):**
+```json
+[
+  {
+    "id": "uuid-del-mensaje-1",
+    "sender_id": "uuid-del-cliente",
+    "receiver_id": "uuid-del-conductor",
+    "client_request_id": "uuid-de-la-solicitud",
+    "message": "Hola conductor",
+    "status": "READ",
+    "is_read": true,
+    "created_at": "2025-01-01T10:00:00"
+  },
+  {
+    "id": "uuid-del-mensaje-2", 
+    "sender_id": "uuid-del-conductor",
+    "receiver_id": "uuid-del-cliente",
+    "client_request_id": "uuid-de-la-solicitud",
+    "message": "Hola cliente, estoy llegando",
+    "status": "SENT",
+    "is_read": false,
+    "created_at": "2025-01-01T10:05:00"
+  }
+]
+```
+
+**Errores Posibles:**
+- `400`: Usuario no autorizado para esta conversación
+- `401`: Token de autenticación inválido
+- `500`: Error interno del servidor
 """)
 def get_conversation(
     request: Request,
@@ -122,13 +190,35 @@ def get_conversation(
 
 
 @router.patch("/mark-read/{client_request_id}", tags=["Chat"], description="""
-Marca todos los mensajes no leídos de una conversación como leídos.
+✅ **MARCAR MENSAJES COMO LEÍDOS**
+
+**Propósito:** Marca todos los mensajes no leídos de una conversación como leídos.
+
+**Casos de Uso:**
+- Al abrir una conversación (marcar automáticamente)
+- Al hacer scroll hasta el final de la conversación
+- Al hacer clic en una conversación desde la lista
+
+**Validaciones:**
+- El usuario debe ser participante del viaje
+- Solo marca mensajes donde el usuario es el receptor
+- Actualiza el estado de los mensajes a "READ"
 
 **Parámetros:**
-- `client_request_id`: ID de la solicitud de viaje
+- `client_request_id`: UUID de la solicitud de viaje
 
-**Respuesta:**
-Devuelve el número de mensajes marcados como leídos.
+**Respuesta Exitosa (200):**
+```json
+{
+  "message": "Se marcaron 3 mensajes como leídos",
+  "count": 3
+}
+```
+
+**Errores Posibles:**
+- `400`: Usuario no autorizado para esta conversación
+- `401`: Token de autenticación inválido
+- `500`: Error interno del servidor
 """)
 def mark_conversation_as_read(
     request: Request,
@@ -163,10 +253,44 @@ def mark_conversation_as_read(
 
 
 @router.get("/unread-count", response_model=List[UnreadCountResponse], tags=["Chat"], description="""
-Obtiene el conteo de mensajes no leídos para todas las conversaciones del usuario.
+📊 **CONTADOR DE MENSAJES NO LEÍDOS**
 
-**Respuesta:**
-Devuelve una lista con el conteo de mensajes no leídos por conversación.
+**Propósito:** Obtiene el conteo de mensajes no leídos para todas las conversaciones del usuario.
+
+**Casos de Uso:**
+- Badge en el icono principal de chat (suma total)
+- Lista de conversaciones con contadores individuales
+- Notificaciones push con número total
+- Actualizar UI cuando hay mensajes nuevos
+
+**Validaciones:**
+- Solo cuenta mensajes donde el usuario es el receptor
+- Solo incluye conversaciones con mensajes no leídos
+- Ordenado por fecha del último mensaje (más reciente primero)
+
+**Respuesta Exitosa (200):**
+```json
+[
+  {
+    "conversation_id": "uuid-de-la-solicitud-1",
+    "unread_count": 3,
+    "last_message": "¿Dónde estás?",
+    "other_user_name": "Juan Pérez",
+    "last_message_time": "2025-01-01T10:00:00"
+  },
+  {
+    "conversation_id": "uuid-de-la-solicitud-2", 
+    "unread_count": 1,
+    "last_message": "Estoy llegando",
+    "other_user_name": "María García",
+    "last_message_time": "2025-01-01T09:30:00"
+  }
+]
+```
+
+**Errores Posibles:**
+- `401`: Token de autenticación inválido
+- `500`: Error interno del servidor
 """)
 def get_unread_messages_count(
     request: Request,
@@ -185,48 +309,6 @@ def get_unread_messages_count(
 
     except Exception as e:
         print(f"[ERROR] Exception en get_unread_messages_count: {str(e)}")
-        print(traceback.format_exc())
-        raise HTTPException(
-            status_code=500, detail=f"Error al obtener conteo de mensajes: {str(e)}")
-
-
-@router.get("/unread-count/{client_request_id}", tags=["Chat"], description="""
-Obtiene el conteo de mensajes no leídos para una conversación específica.
-
-**Parámetros:**
-- `client_request_id`: ID de la solicitud de viaje
-
-**Respuesta:**
-Devuelve el número de mensajes no leídos en la conversación.
-""")
-def get_conversation_unread_count(
-    request: Request,
-    session: SessionDep,
-    client_request_id: UUID = Path(...,
-                                   description="ID de la solicitud de viaje")
-):
-    """
-    Obtiene el conteo de mensajes no leídos para una conversación específica
-    """
-    try:
-        user_id = request.state.user_id
-
-        # Obtener conteo de mensajes no leídos
-        count = get_unread_count_for_conversation(
-            session, client_request_id, user_id)
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "client_request_id": str(client_request_id),
-                "unread_count": count
-            }
-        )
-
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        print(f"[ERROR] Exception en get_conversation_unread_count: {str(e)}")
         print(traceback.format_exc())
         raise HTTPException(
             status_code=500, detail=f"Error al obtener conteo de mensajes: {str(e)}")

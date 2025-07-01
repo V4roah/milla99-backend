@@ -179,31 +179,6 @@ def get_unread_count(session: Session, user_id: UUID) -> List[UnreadCountRespons
     return unread_counts
 
 
-def get_unread_count_for_conversation(session: Session, client_request_id: UUID, user_id: UUID) -> int:
-    """
-    Obtiene el conteo de mensajes no leídos para una conversación específica
-    """
-    # Verificar que el usuario tiene acceso a esta conversación
-    client_request = session.get(ClientRequest, client_request_id)
-    if not client_request:
-        raise ValueError("Solicitud de viaje no encontrada")
-
-    if client_request.id_client != user_id and client_request.id_driver_assigned != user_id:
-        raise ValueError("No tienes acceso a esta conversación")
-
-    # Contar mensajes no leídos
-    statement = select(func.count(ChatMessage.id)).where(
-        and_(
-            ChatMessage.client_request_id == client_request_id,
-            ChatMessage.receiver_id == user_id,
-            ChatMessage.is_read == False
-        )
-    )
-
-    count = session.exec(statement).first()
-    return count or 0
-
-
 def cleanup_expired_messages(session: Session) -> int:
     """
     Elimina mensajes expirados según la configuración del proyecto
