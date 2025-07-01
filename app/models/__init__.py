@@ -27,3 +27,4 @@ from .config_service_value import ConfigServiceValue, VehicleTypeConfigurationCr
 from .withdrawal import Withdrawal, WithdrawalStatus
 from .penality_user import PenalityUser, statusEnum
 from .refresh_token import RefreshToken
+from .chat_message import ChatMessage, ChatMessageCreate, ChatMessageRead, UnreadCountResponse, MessageStatus

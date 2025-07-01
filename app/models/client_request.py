@@ -1,5 +1,6 @@
 from sqlmodel import SQLModel, Field, Relationship
 from sqlalchemy import Column, Enum, event, String
+from app.models.chat_message import ChatMessage
 import enum
 from datetime import datetime, timezone
 from typing import Optional, List
@@ -109,6 +110,8 @@ class ClientRequest(SQLModel, table=True):
         sa_relationship_kwargs={
             "foreign_keys": "PenalityUser.id_client_request"}
     )
+    chat_messages: List["ChatMessage"] = Relationship(
+        back_populates="client_request")
 
 # Definir el listener para el evento after_update
 

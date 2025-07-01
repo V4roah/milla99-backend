@@ -7,6 +7,7 @@ import re
 from datetime import datetime, date, timezone
 from app.models.user_has_roles import UserHasRole
 from app.models.driver_documents import DriverDocuments
+from app.models.chat_message import ChatMessage
 from sqlalchemy.orm import relationship
 from uuid import UUID, uuid4
 import pytz
@@ -70,6 +71,14 @@ class User(UserBase, table=True):
         sa_relationship_kwargs={"foreign_keys": "PenalityUser.id_user"}
     )
     refresh_tokens: List["RefreshToken"] = Relationship(back_populates="user")
+    sent_messages: List["ChatMessage"] = Relationship(
+        back_populates="sender",
+        sa_relationship_kwargs={"foreign_keys": "[ChatMessage.sender_id]"}
+    )
+    received_messages: List["ChatMessage"] = Relationship(
+        back_populates="receiver",
+        sa_relationship_kwargs={"foreign_keys": "[ChatMessage.receiver_id]"}
+    )
 
 
 class UserCreate(SQLModel):
