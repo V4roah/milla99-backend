@@ -5,7 +5,6 @@ from uuid import UUID
 from app.services.chat_service import create_chat_message, get_unread_count
 from app.models.chat_message import ChatMessageCreate
 from app.core.db import get_session
-from app.core.sio import sio
 
 # Configura Redis como message manager
 mgr = socketio.AsyncRedisManager('redis://localhost:6379/0')
