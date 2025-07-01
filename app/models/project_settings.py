@@ -24,6 +24,9 @@ class ProjectSettingsBase(SQLModel):
     day_suspension: Optional[int] = None  # Dias de suspension por multa
     # Tiempo en minutos para que expire una solicitud
     request_timeout_minutes: Optional[int] = Field(default=5)
+    # Tiempo en días para que expiren los mensajes de chat
+    chat_message_retention_days: Optional[int] = Field(
+        default=30, description="Días que se mantienen los mensajes de chat antes de ser eliminados automáticamente")
 
 
 class ProjectSettings(ProjectSettingsBase, table=True):
@@ -56,3 +59,4 @@ class ProjectSettingsUpdate(SQLModel):
     cancel_max_weeks: Optional[int] = None
     day_suspension: Optional[int] = None
     request_timeout_minutes: Optional[int] = None
+    chat_message_retention_days: Optional[int] = None

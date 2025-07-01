@@ -7,6 +7,7 @@ from app.models.user import User
 from app.models.client_request import ClientRequest, StatusEnum
 from app.models.chat_message import ChatMessage, MessageStatus
 from app.models.user_has_roles import UserHasRole, RoleStatus
+from app.models.project_settings import ProjectSettings
 from app.core.db import engine
 from datetime import datetime, timedelta
 import pytz
@@ -73,9 +74,12 @@ class TestChatSystem:
         client_request = self._create_test_client_request(
             client_user.id, driver_user.id)
 
+        # Guardar el ID para usarlo después
+        client_request_id = client_request.id
+
         # Crear algunos mensajes en la BD directamente
         self._create_test_messages(
-            client_user.id, driver_user.id, client_request.id)
+            client_user.id, driver_user.id, client_request_id)
 
         # Autenticar como cliente
         client_token = self._authenticate_user(
@@ -84,13 +88,16 @@ class TestChatSystem:
 
         # Obtener conversación
         response = client.get(
-            f"/chat/conversation/{client_request.id}", headers=client_headers)
+            f"/chat/conversation/{client_request_id}", headers=client_headers)
 
         assert response.status_code == 200
         messages = response.json()
         assert len(messages) == 2  # Deberían ser 2 mensajes
-        assert messages[0]["message"] == "Hola cliente"
-        assert messages[1]["message"] == "Hola conductor"
+        # Los mensajes se ordenan por fecha de creación (created_at)
+        # message1: "Hola conductor, ¿dónde estás?" (cliente → conductor)
+        # message2: "Hola cliente, estoy llegando" (conductor → cliente)
+        assert messages[0]["message"] == "Hola conductor, ¿dónde estás?"
+        assert messages[1]["message"] == "Hola cliente, estoy llegando"
 
     def test_get_conversation_unauthorized_access(self, client: TestClient):
         """Test para acceder a conversación sin autorización"""
@@ -236,6 +243,9 @@ class TestChatSystem:
         client_request = self._create_test_client_request(
             client_user.id, driver_user.id)
 
+        # Guardar el ID para usarlo después
+        client_request_id = client_request.id
+
         # Autenticar como cliente
         client_token = self._authenticate_user(
             client, client_user.phone_number)
@@ -244,7 +254,7 @@ class TestChatSystem:
         # Enviar mensaje
         message_data = {
             "receiver_id": str(driver_user.id),
-            "client_request_id": str(client_request.id),
+            "client_request_id": str(client_request_id),
             "message": "Mensaje de prueba"
         }
 
@@ -260,10 +270,23 @@ class TestChatSystem:
             ).first()
 
             assert message is not None
-            assert message.expires_at > datetime.now(COLOMBIA_TZ)
+
+            # Asegurar que ambos datetimes tengan zona horaria para la comparación
+            now_with_tz = datetime.now(COLOMBIA_TZ)
+
+            # Si expires_at no tiene zona horaria, asumir que es UTC y convertir
+            if message.expires_at.tzinfo is None:
+                # Asumir que está en UTC y convertir a Colombia
+                expires_at_with_tz = message.expires_at.replace(
+                    tzinfo=pytz.UTC).astimezone(COLOMBIA_TZ)
+            else:
+                expires_at_with_tz = message.expires_at
+
+            assert expires_at_with_tz > now_with_tz
+
             # Debería expirar en aproximadamente 30 días
-            expected_expiry = datetime.now(COLOMBIA_TZ) + timedelta(days=30)
-            assert abs((message.expires_at - expected_expiry).days) <= 1
+            expected_expiry = now_with_tz + timedelta(days=30)
+            assert abs((expires_at_with_tz - expected_expiry).days) <= 1
 
     # Métodos auxiliares para crear datos de prueba
     def _create_test_users(self):
@@ -396,6 +419,15 @@ class TestChatSystem:
 
         try:
             with Session(engine) as session:
+                # Obtener días de retención desde la configuración
+                retention_days = 30  # Valor por defecto para tests
+                try:
+                    config = session.exec(select(ProjectSettings)).first()
+                    if config and config.chat_message_retention_days is not None:
+                        retention_days = config.chat_message_retention_days
+                except Exception:
+                    pass  # Usar valor por defecto si hay error
+
                 # Mensaje del cliente al conductor (NO LEÍDO - el conductor debe marcarlo como leído)
                 message1 = ChatMessage(
                     sender_id=client_id,
@@ -403,7 +435,9 @@ class TestChatSystem:
                     client_request_id=client_request_id,
                     message="Hola conductor, ¿dónde estás?",
                     status=MessageStatus.SENT,
-                    is_read=False  # NO LEÍDO - el conductor debe marcarlo
+                    is_read=False,  # NO LEÍDO - el conductor debe marcarlo
+                    expires_at=datetime.now(
+                        COLOMBIA_TZ) + timedelta(days=retention_days)
                 )
 
                 # Mensaje del conductor al cliente (NO LEÍDO - el cliente debe marcarlo como leído)
@@ -413,7 +447,9 @@ class TestChatSystem:
                     client_request_id=client_request_id,
                     message="Hola cliente, estoy llegando",
                     status=MessageStatus.SENT,
-                    is_read=False  # NO LEÍDO - el cliente debe marcarlo
+                    is_read=False,  # NO LEÍDO - el cliente debe marcarlo
+                    expires_at=datetime.now(
+                        COLOMBIA_TZ) + timedelta(days=retention_days)
                 )
 
                 session.add(message1)
@@ -518,11 +554,14 @@ class TestChatSystem:
         client_request = self._create_test_client_request(
             client_user.id, driver_user.id)
 
+        # Guardar el ID para usarlo después
+        client_request_id = client_request.id
+
         # Cambiar el estado a PAID
         with Session(engine) as session:
             client_request = session.exec(
                 select(ClientRequest).where(
-                    ClientRequest.id == client_request.id)
+                    ClientRequest.id == client_request_id)
             ).first()
             client_request.status = "PAID"
             session.add(client_request)
@@ -537,7 +576,7 @@ class TestChatSystem:
         # Intentar enviar mensaje (debería fallar)
         message_data = {
             "receiver_id": str(driver_user.id),
-            "client_request_id": str(client_request.id),
+            "client_request_id": str(client_request_id),
             "message": "Este mensaje no debería enviarse"
         }
 
@@ -557,11 +596,14 @@ class TestChatSystem:
         client_request = self._create_test_client_request(
             client_user.id, driver_user.id)
 
+        # Guardar el ID para usarlo después
+        client_request_id = client_request.id
+
         # Cambiar el estado a CANCELLED
         with Session(engine) as session:
             client_request = session.exec(
                 select(ClientRequest).where(
-                    ClientRequest.id == client_request.id)
+                    ClientRequest.id == client_request_id)
             ).first()
             client_request.status = "CANCELLED"
             session.add(client_request)
@@ -576,7 +618,7 @@ class TestChatSystem:
         # Intentar enviar mensaje (debería fallar)
         message_data = {
             "receiver_id": str(driver_user.id),
-            "client_request_id": str(client_request.id),
+            "client_request_id": str(client_request_id),
             "message": "Este mensaje no debería enviarse"
         }
 
@@ -596,15 +638,18 @@ class TestChatSystem:
         client_request = self._create_test_client_request(
             client_user.id, driver_user.id)
 
+        # Guardar el ID para usarlo después
+        client_request_id = client_request.id
+
         # Crear algunos mensajes
         self._create_test_messages(
-            client_user.id, driver_user.id, client_request.id)
+            client_user.id, driver_user.id, client_request_id)
 
         # Cambiar el estado a PAID
         with Session(engine) as session:
             client_request = session.exec(
                 select(ClientRequest).where(
-                    ClientRequest.id == client_request.id)
+                    ClientRequest.id == client_request_id)
             ).first()
             client_request.status = "PAID"
             session.add(client_request)
@@ -618,7 +663,7 @@ class TestChatSystem:
 
         # Intentar obtener mensajes (debería retornar lista vacía)
         response = client.get(
-            f"/chat/conversation/{client_request.id}", headers=client_headers)
+            f"/chat/conversation/{client_request_id}", headers=client_headers)
         assert response.status_code == 200
         messages = response.json()
         assert len(messages) == 0
@@ -633,11 +678,14 @@ class TestChatSystem:
         client_request = self._create_test_client_request(
             client_user.id, driver_user.id)
 
+        # Guardar el ID para usarlo después
+        client_request_id = client_request.id
+
         # Verificar que el estado es activo
         with Session(engine) as session:
             client_request = session.exec(
                 select(ClientRequest).where(
-                    ClientRequest.id == client_request.id)
+                    ClientRequest.id == client_request_id)
             ).first()
             assert client_request.status in [
                 "ACCEPTED", "ON_THE_WAY", "ARRIVED", "TRAVELLING", "FINISHED"]
@@ -651,7 +699,7 @@ class TestChatSystem:
         # Enviar mensaje (debería funcionar)
         message_data = {
             "receiver_id": str(driver_user.id),
-            "client_request_id": str(client_request.id),
+            "client_request_id": str(client_request_id),
             "message": "Mensaje durante viaje activo"
         }
 
@@ -662,8 +710,81 @@ class TestChatSystem:
 
         # Obtener conversación (debería funcionar)
         response = client.get(
-            f"/chat/conversation/{client_request.id}", headers=client_headers)
+            f"/chat/conversation/{client_request_id}", headers=client_headers)
         assert response.status_code == 200
         messages = response.json()
         assert len(messages) > 0
         print(f"✅ Conversación accesible durante viaje activo")
+
+    def test_dynamic_chat_retention_policy(self, client: TestClient):
+        """Test que verifica que la política de retención de mensajes es configurable dinámicamente"""
+        print(f"\n🧪 INICIANDO TEST: test_dynamic_chat_retention_policy")
+
+        # Crear usuarios y solicitud
+        client_user, driver_user = self._create_test_users()
+        client_request = self._create_test_client_request(
+            client_user.id, driver_user.id)
+
+        # Guardar el ID para usarlo después
+        client_request_id = client_request.id
+
+        # Cambiar la configuración de retención a 5 días
+        with Session(engine) as session:
+            project_settings = session.exec(
+                select(ProjectSettings)
+            ).first()
+            project_settings.chat_message_retention_days = 5
+            session.add(project_settings)
+            session.commit()
+            print(f"✅ Configuración cambiada a 5 días de retención")
+
+        # Autenticar como cliente
+        client_token = self._authenticate_user(
+            client, client_user.phone_number)
+        client_headers = {"Authorization": f"Bearer {client_token}"}
+
+        # Enviar mensaje
+        message_data = {
+            "receiver_id": str(driver_user.id),
+            "client_request_id": str(client_request_id),
+            "message": "Mensaje con retención dinámica"
+        }
+
+        response = client.post(
+            "/chat/send", json=message_data, headers=client_headers)
+        assert response.status_code == 201
+        print(f"✅ Mensaje enviado correctamente")
+
+        # Verificar que el mensaje tiene fecha de expiración de 5 días
+        with Session(engine) as session:
+            message = session.exec(
+                select(ChatMessage).where(
+                    ChatMessage.message == "Mensaje con retención dinámica")
+            ).first()
+
+            assert message is not None
+
+            # Asegurar que ambos datetimes tengan zona horaria para la comparación
+            now_with_tz = datetime.now(COLOMBIA_TZ)
+
+            # Si expires_at no tiene zona horaria, asumir que es UTC y convertir
+            if message.expires_at.tzinfo is None:
+                expires_at_with_tz = message.expires_at.replace(
+                    tzinfo=pytz.UTC).astimezone(COLOMBIA_TZ)
+            else:
+                expires_at_with_tz = message.expires_at
+
+            # Verificar que expira en aproximadamente 5 días
+            expected_expiry = now_with_tz + timedelta(days=5)
+            assert abs((expires_at_with_tz - expected_expiry).days) <= 1
+            print(f"✅ Mensaje configurado para expirar en 5 días")
+
+        # Restaurar configuración original
+        with Session(engine) as session:
+            project_settings = session.exec(
+                select(ProjectSettings)
+            ).first()
+            project_settings.chat_message_retention_days = 30
+            session.add(project_settings)
+            session.commit()
+            print(f"✅ Configuración restaurada a 30 días")
