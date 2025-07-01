@@ -220,59 +220,8 @@ class TestChatSystem:
         assert unread_counts[0]["unread_count"] == 1
         assert unread_counts[0]["conversation_id"] == str(client_request.id)
 
-    def test_message_retention_policy(self, client: TestClient):
-        """Test para verificar que los mensajes tienen fecha de expiración"""
-        # Crear usuarios y solicitud
-        client_user, driver_user = self._create_test_users()
-        client_request = self._create_test_client_request(
-            client_user.id, driver_user.id)
-
-        # Guardar el ID para usarlo después
-        client_request_id = client_request.id
-
-        # Autenticar como cliente
-        client_token = self._authenticate_user(
-            client, client_user.phone_number)
-        client_headers = {"Authorization": f"Bearer {client_token}"}
-
-        # Enviar mensaje
-        message_data = {
-            "receiver_id": str(driver_user.id),
-            "client_request_id": str(client_request_id),
-            "message": "Mensaje de prueba"
-        }
-
-        response = client.post(
-            "/chat/send", json=message_data, headers=client_headers)
-        assert response.status_code == 201
-
-        # Verificar que el mensaje tiene fecha de expiración en la BD
-        with Session(engine) as session:
-            message = session.exec(
-                select(ChatMessage).where(
-                    ChatMessage.message == "Mensaje de prueba")
-            ).first()
-
-            assert message is not None
-
-            # Asegurar que ambos datetimes tengan zona horaria para la comparación
-            now_with_tz = datetime.now(COLOMBIA_TZ)
-
-            # Si expires_at no tiene zona horaria, asumir que es UTC y convertir
-            if message.expires_at.tzinfo is None:
-                # Asumir que está en UTC y convertir a Colombia
-                expires_at_with_tz = message.expires_at.replace(
-                    tzinfo=pytz.UTC).astimezone(COLOMBIA_TZ)
-            else:
-                expires_at_with_tz = message.expires_at
-
-            assert expires_at_with_tz > now_with_tz
-
-            # Debería expirar en aproximadamente 30 días
-            expected_expiry = now_with_tz + timedelta(days=30)
-            assert abs((expires_at_with_tz - expected_expiry).days) <= 1
-
     # Métodos auxiliares para crear datos de prueba
+
     def _create_test_users(self):
         """Crea un cliente y un conductor para las pruebas"""
         # Usar timestamps para hacer números únicos
@@ -403,10 +352,6 @@ class TestChatSystem:
 
         try:
             with Session(engine) as session:
-                # Obtener días de retención desde la configuración del proyecto
-                config = session.exec(select(ProjectSettings)).first()
-                retention_days = config.chat_message_retention_days if config else 30
-
                 # Mensaje del cliente al conductor (NO LEÍDO - el conductor debe marcarlo como leído)
                 message1 = ChatMessage(
                     sender_id=client_id,
@@ -414,9 +359,7 @@ class TestChatSystem:
                     client_request_id=client_request_id,
                     message="Hola conductor, ¿dónde estás?",
                     status=MessageStatus.SENT,
-                    is_read=False,  # NO LEÍDO - el conductor debe marcarlo
-                    expires_at=datetime.now(
-                        COLOMBIA_TZ) + timedelta(days=retention_days)
+                    is_read=False  # NO LEÍDO - el conductor debe marcarlo
                 )
 
                 session.add(message1)
@@ -434,9 +377,7 @@ class TestChatSystem:
                     client_request_id=client_request_id,
                     message="Hola cliente, estoy llegando",
                     status=MessageStatus.SENT,
-                    is_read=False,  # NO LEÍDO - el cliente debe marcarlo
-                    expires_at=datetime.now(
-                        COLOMBIA_TZ) + timedelta(days=retention_days)
+                    is_read=False  # NO LEÍDO - el cliente debe marcarlo
                 )
 
                 session.add(message2)
@@ -701,137 +642,3 @@ class TestChatSystem:
         messages = response.json()
         assert len(messages) > 0
         print(f"✅ Conversación accesible durante viaje activo")
-
-    def test_dynamic_chat_retention_policy(self, client: TestClient):
-        """Test que verifica que la política de retención de mensajes es configurable dinámicamente"""
-        print(f"\n🧪 INICIANDO TEST: test_dynamic_chat_retention_policy")
-
-        # Crear usuarios y solicitud
-        client_user, driver_user = self._create_test_users()
-        client_request = self._create_test_client_request(
-            client_user.id, driver_user.id)
-
-        # Guardar el ID para usarlo después
-        client_request_id = client_request.id
-
-        # Verificar configuración inicial (debería ser 30 días)
-        with Session(engine) as session:
-            config = session.exec(select(ProjectSettings)).first()
-            initial_retention = config.chat_message_retention_days
-            print(f"📊 Configuración inicial: {initial_retention} días")
-
-        # Cambiar la configuración de retención a 5 días
-        with Session(engine) as session:
-            project_settings = session.exec(
-                select(ProjectSettings)
-            ).first()
-            project_settings.chat_message_retention_days = 5
-            session.add(project_settings)
-            session.commit()
-            print(f"✅ Configuración cambiada a 5 días de retención")
-
-        # Autenticar como cliente
-        client_token = self._authenticate_user(
-            client, client_user.phone_number)
-        client_headers = {"Authorization": f"Bearer {client_token}"}
-
-        # Enviar mensaje
-        message_data = {
-            "receiver_id": str(driver_user.id),
-            "client_request_id": str(client_request_id),
-            "message": "Mensaje con retención dinámica"
-        }
-
-        response = client.post(
-            "/chat/send", json=message_data, headers=client_headers)
-        assert response.status_code == 201
-        print(f"✅ Mensaje enviado correctamente")
-
-        # Verificar que el mensaje tiene fecha de expiración de 5 días
-        with Session(engine) as session:
-            message = session.exec(
-                select(ChatMessage).where(
-                    ChatMessage.message == "Mensaje con retención dinámica")
-            ).first()
-
-            assert message is not None
-
-            # Asegurar que ambos datetimes tengan zona horaria para la comparación
-            now_with_tz = datetime.now(COLOMBIA_TZ)
-
-            # Si expires_at no tiene zona horaria, asumir que es UTC y convertir
-            if message.expires_at.tzinfo is None:
-                expires_at_with_tz = message.expires_at.replace(
-                    tzinfo=pytz.UTC).astimezone(COLOMBIA_TZ)
-            else:
-                expires_at_with_tz = message.expires_at
-
-            # Verificar que expira en aproximadamente 5 días
-            expected_expiry = now_with_tz + timedelta(days=5)
-            assert abs((expires_at_with_tz - expected_expiry).days) <= 1
-            print(f"✅ Mensaje configurado para expirar en 5 días")
-
-        # Cambiar configuración a 15 días y enviar otro mensaje
-        with Session(engine) as session:
-            project_settings = session.exec(
-                select(ProjectSettings)
-            ).first()
-            project_settings.chat_message_retention_days = 15
-            session.add(project_settings)
-            session.commit()
-            print(f"✅ Configuración cambiada a 15 días de retención")
-
-        # Verificar que la configuración se actualizó correctamente antes de enviar el segundo mensaje
-        with Session(engine) as session:
-            config_check = session.exec(select(ProjectSettings)).first()
-            print(
-                f"🔍 Configuración antes del segundo mensaje: {config_check.chat_message_retention_days} días")
-
-        # Enviar segundo mensaje
-        message_data2 = {
-            "receiver_id": str(driver_user.id),
-            "client_request_id": str(client_request_id),
-            "message": "Mensaje con retención de 15 días"
-        }
-
-        response2 = client.post(
-            "/chat/send", json=message_data2, headers=client_headers)
-        assert response2.status_code == 201
-        print(f"✅ Segundo mensaje enviado correctamente")
-
-        # Verificar que el segundo mensaje tiene fecha de expiración de 15 días
-        with Session(engine) as session:
-            message2 = session.exec(
-                select(ChatMessage).where(
-                    ChatMessage.message == "Mensaje con retención de 15 días")
-            ).first()
-
-            assert message2 is not None
-
-            if message2.expires_at.tzinfo is None:
-                expires_at_with_tz2 = message2.expires_at.replace(
-                    tzinfo=pytz.UTC).astimezone(COLOMBIA_TZ)
-            else:
-                expires_at_with_tz2 = message2.expires_at
-
-            # Calcular el tiempo actual para la segunda verificación
-            now_with_tz2 = datetime.now(COLOMBIA_TZ)
-
-            # Verificar que expira en aproximadamente 15 días
-            expected_expiry2 = now_with_tz2 + timedelta(days=15)
-            actual_days = (expires_at_with_tz2 - now_with_tz2).days
-            print(f"🔍 Días de expiración reales: {actual_days}")
-            print(f"🔍 Fecha de expiración configurada: {expires_at_with_tz2}")
-            print(f"🔍 Fecha esperada: {expected_expiry2}")
-            assert abs((expires_at_with_tz2 - expected_expiry2).days) <= 1
-            print(f"✅ Segundo mensaje configurado para expirar en 15 días")
-
-        # Restaurar configuración original
-        with Session(engine) as session:
-            project_settings = session.exec(
-                select(ProjectSettings)
-            ).first()
-            project_settings.chat_message_retention_days = initial_retention
-            session.add(project_settings)
-            session.commit()
-            print(f"✅ Configuración restaurada a {initial_retention} días")

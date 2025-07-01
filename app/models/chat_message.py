@@ -27,10 +27,6 @@ class ChatMessage(SQLModel, table=True):
     status: MessageStatus = Field(default=MessageStatus.SENT, nullable=False)
     is_read: bool = Field(default=False, nullable=False)
 
-    # Retención temporal - mensajes se eliminan según configuración del proyecto
-    # La fecha se establece dinámicamente al crear el mensaje
-    expires_at: datetime = Field(nullable=False)
-
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(COLOMBIA_TZ),
         nullable=False

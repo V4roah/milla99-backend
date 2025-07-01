@@ -2,31 +2,12 @@ from sqlmodel import Session, select, and_, or_, func
 from app.models.chat_message import ChatMessage, ChatMessageCreate, MessageStatus, UnreadCountResponse
 from app.models.user import User
 from app.models.client_request import ClientRequest
-from app.models.project_settings import ProjectSettings
 from datetime import datetime, timedelta
 from uuid import UUID
 import pytz
 from typing import List, Optional
 
 COLOMBIA_TZ = pytz.timezone("America/Bogota")
-
-
-def get_chat_retention_days(session: Session) -> int:
-    """
-    Obtiene el número de días de retención de mensajes desde la configuración del proyecto.
-    Si no está configurado, retorna 30 días por defecto.
-    """
-    try:
-        # Crear una nueva sesión para evitar problemas de caché
-        from app.core.db import engine
-        with Session(engine) as fresh_session:
-            # Obtener la configuración del proyecto con sesión fresca
-            config = fresh_session.exec(select(ProjectSettings)).first()
-            if config and config.chat_message_retention_days is not None:
-                return config.chat_message_retention_days
-        return 30  # Valor por defecto
-    except Exception:
-        return 30  # Valor por defecto en caso de error
 
 
 def create_chat_message(session: Session, sender_id: UUID, message_data: ChatMessageCreate) -> ChatMessage:
@@ -45,17 +26,13 @@ def create_chat_message(session: Session, sender_id: UUID, message_data: ChatMes
     if client_request.status == "CANCELLED":
         raise ValueError("No se pueden enviar mensajes en un viaje cancelado")
 
-    # Obtener días de retención desde la configuración
-    retention_days = get_chat_retention_days(session)
-
-    # Crear mensaje con fecha de expiración dinámica
+    # Crear mensaje sin fecha de expiración (se elimina automáticamente cuando el viaje se completa)
     chat_message = ChatMessage(
         sender_id=sender_id,
         receiver_id=message_data.receiver_id,
         client_request_id=message_data.client_request_id,
         message=message_data.message,
-        status=MessageStatus.SENT,
-        expires_at=datetime.now(COLOMBIA_TZ) + timedelta(days=retention_days)
+        status=MessageStatus.SENT
     )
 
     session.add(chat_message)
@@ -177,30 +154,6 @@ def get_unread_count(session: Session, user_id: UUID) -> List[UnreadCountRespons
             ))
 
     return unread_counts
-
-
-def cleanup_expired_messages(session: Session) -> int:
-    """
-    Elimina mensajes expirados según la configuración del proyecto
-    Retorna el número de mensajes eliminados
-    """
-    # Obtener días de retención desde la configuración
-    retention_days = get_chat_retention_days(session)
-    cutoff_date = datetime.now(COLOMBIA_TZ) - timedelta(days=retention_days)
-
-    statement = select(ChatMessage).where(
-        ChatMessage.expires_at < cutoff_date
-    )
-
-    expired_messages = session.exec(statement).all()
-    count = len(expired_messages)
-
-    for message in expired_messages:
-        session.delete(message)
-
-    session.commit()
-
-    return count
 
 
 def cleanup_chat_messages_for_request(session: Session, client_request_id: UUID) -> int:
