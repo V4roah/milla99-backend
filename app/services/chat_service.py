@@ -17,10 +17,13 @@ def get_chat_retention_days(session: Session) -> int:
     Si no está configurado, retorna 30 días por defecto.
     """
     try:
-        # Obtener la configuración del proyecto
-        config = session.exec(select(ProjectSettings)).first()
-        if config and config.chat_message_retention_days is not None:
-            return config.chat_message_retention_days
+        # Crear una nueva sesión para evitar problemas de caché
+        from app.core.db import engine
+        with Session(engine) as fresh_session:
+            # Obtener la configuración del proyecto con sesión fresca
+            config = fresh_session.exec(select(ProjectSettings)).first()
+            if config and config.chat_message_retention_days is not None:
+                return config.chat_message_retention_days
         return 30  # Valor por defecto
     except Exception:
         return 30  # Valor por defecto en caso de error
