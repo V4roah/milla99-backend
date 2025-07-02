@@ -28,6 +28,8 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             ("/login-admin/", "POST"),
             ("/static/reports/", "GET"),   # Permitir ver reportes HTML
             ("/static/reports/", "POST"),  # Permitir post (por si acaso)
+            ("/metrics", "GET"),  # <-- Agregado para monitoreo
+            ("/health", "GET"),   # <-- Agregado para health check
             # ("/drivers-position/", "POST"),  # Rutas POST de drivers-position
             # ("/drivers-position/", "GET"),  # Rutas GET de drivers-position
             # Rutas DELETE de drivers-position

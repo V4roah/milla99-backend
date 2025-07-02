@@ -9,12 +9,14 @@ from app.routers.transaction import router as transaction_router
 from app.routers.bank_accounts import router as bank_accounts_router
 from app.routers.bank import router as bank_router
 from app.routers.test_runner import router as test_runner_router
+from app.routers.metrics import router as metrics_router
 
 from .core.db import create_all_tables, get_environment_info
 from .routers import config_service_value, referrals, users, drivers, auth, verify_docs, driver_position, driver_trip_offer, client_request, login_admin, withdrawal, driver_savings, withdrawal_admin, admin_statistics, admin_drivers, user_fcm_token, chat, trip_stops
 from .core.config import settings
 from .core.init_data import init_data
 from .core.middleware.auth import JWTAuthMiddleware
+from .core.middleware.metrics import MetricsMiddleware
 from .core.sio_events import sio
 import socketio
 
@@ -57,6 +59,9 @@ fastapi_app.add_middleware(
 
 fastapi_app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# Agregar middleware de métricas (debe ir antes del de autenticación)
+fastapi_app.add_middleware(MetricsMiddleware)
+
 # Agregar middleware de autenticación
 fastapi_app.add_middleware(JWTAuthMiddleware)
 
@@ -85,6 +90,7 @@ fastapi_app.include_router(project_settings.router)
 fastapi_app.include_router(admin_statistics.router)
 fastapi_app.include_router(admin_drivers.router)
 fastapi_app.include_router(test_runner_router)
+fastapi_app.include_router(metrics_router)
 
 # Socket.IO debe ser lo último
 app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app)
