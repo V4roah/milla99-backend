@@ -29,6 +29,11 @@ class ClientRequestCreate(SQLModel):
     payment_method_id: Optional[int] = Field(
         # Nuevo campo con valor por defecto
         default=1, description="ID del método de pago (1=cash, 2=nequi, 3=daviplata). Por defecto es 1 (cash)")
+    # Nuevo campo para múltiples paradas
+    intermediate_stops: Optional[List[dict]] = Field(
+        default=None,
+        description="Lista de paradas intermedias. Cada parada debe tener: latitude, longitude, description"
+    )
 
 
 class StatusEnum(str, enum.Enum):
@@ -112,6 +117,9 @@ class ClientRequest(SQLModel, table=True):
     )
     chat_messages: List["ChatMessage"] = Relationship(
         back_populates="client_request")
+    trip_stops: List["TripStop"] = Relationship(
+        back_populates="client_request"
+    )
 
 # Definir el listener para el evento after_update
 

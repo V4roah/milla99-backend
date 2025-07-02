@@ -11,7 +11,7 @@ from app.routers.bank import router as bank_router
 from app.routers.test_runner import router as test_runner_router
 
 from .core.db import create_all_tables, get_environment_info
-from .routers import config_service_value, referrals, users, drivers, auth, verify_docs, driver_position, driver_trip_offer, client_request, login_admin, withdrawal, driver_savings, withdrawal_admin, admin_statistics, admin_drivers, user_fcm_token, chat
+from .routers import config_service_value, referrals, users, drivers, auth, verify_docs, driver_position, driver_trip_offer, client_request, login_admin, withdrawal, driver_savings, withdrawal_admin, admin_statistics, admin_drivers, user_fcm_token, chat, trip_stops
 from .core.config import settings
 from .core.init_data import init_data
 from .core.middleware.auth import JWTAuthMiddleware
@@ -65,6 +65,7 @@ fastapi_app.include_router(users.router)
 fastapi_app.include_router(auth.router)
 fastapi_app.include_router(drivers.router)
 fastapi_app.include_router(client_request.router)
+fastapi_app.include_router(trip_stops.router)
 fastapi_app.include_router(driver_position.router)
 fastapi_app.include_router(config_service_value.router)
 fastapi_app.include_router(driver_trip_offer.router)

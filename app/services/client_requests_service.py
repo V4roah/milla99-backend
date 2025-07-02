@@ -56,6 +56,21 @@ def create_client_request(db: Session, data: ClientRequestCreate, id_client: UUI
     db.add(db_obj)
     db.commit()
     db.refresh(db_obj)
+
+    # Crear las paradas del viaje
+    from app.services.trip_stops_service import create_trip_stops_for_request
+    create_trip_stops_for_request(
+        session=db,
+        client_request_id=db_obj.id,
+        pickup_lat=data.pickup_lat,
+        pickup_lng=data.pickup_lng,
+        destination_lat=data.destination_lat,
+        destination_lng=data.destination_lng,
+        pickup_description=data.pickup_description,
+        destination_description=data.destination_description,
+        intermediate_stops=data.intermediate_stops
+    )
+
     return db_obj
 
 
@@ -285,7 +300,7 @@ def update_status_service(session: Session, id_client_request: UUID, status: str
     return {"success": True, "message": "Status actualizado correctamente"}
 
 
-def get_client_request_detail_service(session: Session, client_request_id: UUID, user_id: UUID):
+def get_client_request_detail_service(session: Session, client_request_id: UUID, user_id: UUID = None):
     """
     Devuelve el detalle de una Client Request, incluyendo info de usuario, driver y vehículo si aplica.
     Solo permite acceso al cliente dueño de la solicitud o al conductor asignado.
@@ -307,90 +322,131 @@ def get_client_request_detail_service(session: Session, client_request_id: UUID,
             detail="No tienes permiso para ver esta solicitud. Solo el cliente o el conductor asignado pueden verla."
         )
 
-    # Buscar el usuario que la creó
-    user = session.query(User).filter(User.id == cr.id_client).first()
-    average_rating = get_average_rating(
-        session, "passenger", user.id) if user else 0.0
-    client_data = {
-        "id": user.id,
-        "full_name": user.full_name,
-        "phone_number": user.phone_number,
-        "country_code": user.country_code,
-        "average_rating": average_rating
-    } if user else None
+    try:
+        # Buscar el usuario que la creó
+        user = session.query(User).filter(User.id == cr.id_client).first()
+        average_rating = get_average_rating(
+            session, "passenger", user.id) if user else 0.0
+        client_data = {
+            "id": user.id,
+            "full_name": user.full_name,
+            "phone_number": user.phone_number,
+            "country_code": user.country_code,
+            "average_rating": average_rating
+        } if user else None
 
-    # Buscar info del conductor asignado (si existe)
-    driver_info = None
-    vehicle_info = None
-    if cr.id_driver_assigned:
-        driver = session.query(User).filter(
-            User.id == cr.id_driver_assigned).first()
-        if driver and driver.driver_info:
-            average_rating = get_average_rating(
-                session, "driver", cr.id_driver_assigned) if cr.id_driver_assigned else 0.0
-            di = driver.driver_info
-            driver_info = {
-                "id": di.id,
-                "first_name": di.first_name,
-                "last_name": di.last_name,
-                "email": di.email,
-                "phone_number": driver.phone_number,
-                "country_code": driver.country_code,
-                "selfie_url": driver.selfie_url,
-                "average_rating": average_rating
-            }
-            if di.vehicle_info:
-                vi = di.vehicle_info
-                vehicle_info = {
-                    "brand": vi.brand,
-                    "model": vi.model,
-                    "model_year": vi.model_year,
-                    "color": vi.color,
-                    "plate": vi.plate,
-                    "vehicle_type_id": vi.vehicle_type_id
+        # Buscar info del conductor asignado (si existe)
+        driver_info = None
+        vehicle_info = None
+        if cr.id_driver_assigned:
+            driver = session.query(User).filter(
+                User.id == cr.id_driver_assigned).first()
+            if driver and driver.driver_info:
+                average_rating = get_average_rating(
+                    session, "driver", cr.id_driver_assigned) if cr.id_driver_assigned else 0.0
+                di = driver.driver_info
+                driver_info = {
+                    "id": di.id,
+                    "first_name": di.first_name,
+                    "last_name": di.last_name,
+                    "email": di.email,
+                    "phone_number": driver.phone_number,
+                    "country_code": driver.country_code,
+                    "selfie_url": driver.selfie_url,
+                    "average_rating": average_rating
+                }
+                if di.vehicle_info:
+                    vi = di.vehicle_info
+                    vehicle_info = {
+                        "brand": vi.brand,
+                        "model": vi.model,
+                        "model_year": vi.model_year,
+                        "color": vi.color,
+                        "plate": vi.plate,
+                        "vehicle_type_id": vi.vehicle_type_id
+                    }
+
+        # Buscar información del método de pago si existe
+        payment_method = None
+        if cr.payment_method_id:
+            pm = session.query(PaymentMethod).filter(
+                PaymentMethod.id == cr.payment_method_id).first()
+            if pm:
+                payment_method = {
+                    "id": pm.id,
+                    "name": pm.name
                 }
 
-    # Buscar información del método de pago si existe
-    payment_method = None
-    if cr.payment_method_id:
-        pm = session.query(PaymentMethod).filter(
-            PaymentMethod.id == cr.payment_method_id).first()
-        if pm:
-            payment_method = {
-                "id": pm.id,
-                "name": pm.name
+        # Construir la respuesta completa
+        response = {
+            "id": cr.id,
+            "status": str(cr.status),
+            "fare_offered": cr.fare_offered,
+            "fare_assigned": cr.fare_assigned,  # Aseguramos que fare_assigned esté incluido
+            "pickup_description": cr.pickup_description,
+            "destination_description": cr.destination_description,
+            "created_at": cr.created_at.isoformat(),
+            "updated_at": cr.updated_at.isoformat(),
+            "client": client_data,
+            "id_driver_assigned": cr.id_driver_assigned,
+            "pickup_position": wkb_to_coords(cr.pickup_position),
+            "destination_position": wkb_to_coords(cr.destination_position),
+            "driver_info": driver_info,
+            "vehicle_info": vehicle_info,
+            "review": cr.review,
+            "payment_method": payment_method,
+            "type_service_id": cr.type_service_id,
+            "client_rating": cr.client_rating,
+            "driver_rating": cr.driver_rating
+        }
+
+        # Obtener el nombre del tipo de servicio
+        type_service = session.query(TypeService).filter(
+            TypeService.id == cr.type_service_id).first()
+        if type_service:
+            response["type_service_name"] = type_service.name
+
+        # Obtener las paradas del viaje
+        from app.services.trip_stops_service import get_trip_stops, get_trip_progress
+        trip_stops = get_trip_stops(session, cr.id)
+        trip_progress = get_trip_progress(session, cr.id)
+
+        # Convertir paradas a formato JSON
+        stops_data = []
+        for stop in trip_stops:
+            stops_data.append({
+                "id": str(stop.id),
+                "stop_order": stop.stop_order,
+                "stop_type": stop.stop_type,
+                "status": stop.status,
+                "latitude": stop.latitude,
+                "longitude": stop.longitude,
+                "description": stop.description,
+                "position": wkb_to_coords(stop.position) if stop.position else None
+            })
+
+        response["trip_stops"] = stops_data
+        response["trip_progress"] = trip_progress
+
+        # Serializar current_stop en trip_progress
+        if trip_progress.get("current_stop"):
+            stop = trip_progress["current_stop"]
+            trip_progress["current_stop"] = {
+                "id": str(stop.id),
+                "stop_order": stop.stop_order,
+                "stop_type": stop.stop_type,
+                "status": stop.status,
+                "latitude": stop.latitude,
+                "longitude": stop.longitude,
+                "description": stop.description,
+                "position": wkb_to_coords(stop.position) if stop.position else None
             }
 
-    # Construir la respuesta completa
-    response = {
-        "id": cr.id,
-        "status": str(cr.status),
-        "fare_offered": cr.fare_offered,
-        "fare_assigned": cr.fare_assigned,  # Aseguramos que fare_assigned esté incluido
-        "pickup_description": cr.pickup_description,
-        "destination_description": cr.destination_description,
-        "created_at": cr.created_at.isoformat(),
-        "updated_at": cr.updated_at.isoformat(),
-        "client": client_data,
-        "id_driver_assigned": cr.id_driver_assigned,
-        "pickup_position": wkb_to_coords(cr.pickup_position),
-        "destination_position": wkb_to_coords(cr.destination_position),
-        "driver_info": driver_info,
-        "vehicle_info": vehicle_info,
-        "review": cr.review,
-        "payment_method": payment_method,
-        "type_service_id": cr.type_service_id,
-        "client_rating": cr.client_rating,
-        "driver_rating": cr.driver_rating
-    }
-
-    # Obtener el nombre del tipo de servicio
-    type_service = session.query(TypeService).filter(
-        TypeService.id == cr.type_service_id).first()
-    if type_service:
-        response["type_service_name"] = type_service.name
-
-    return response
+        return response
+    except Exception as e:
+        print("ERROR EN SERIALIZACION DE CLIENT REQUEST")
+        traceback.print_exc()
+        raise
 
 
 def get_client_requests_by_status_service(session: Session, status: str, user_id: UUID):
