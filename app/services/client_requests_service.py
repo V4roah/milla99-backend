@@ -334,6 +334,8 @@ def get_client_request_detail_service(session: Session, client_request_id: UUID,
                 "first_name": di.first_name,
                 "last_name": di.last_name,
                 "email": di.email,
+                "phone_number": driver.phone_number,
+                "country_code": driver.country_code,
                 "selfie_url": driver.selfie_url,
                 "average_rating": average_rating
             }
@@ -429,6 +431,8 @@ def get_client_requests_by_status_service(session: Session, status: str, user_id
                 drivers[cr.id_driver_assigned] = {
                     "id": str(driver.id),
                     "full_name": driver.full_name,
+                    "phone_number": driver.phone_number,
+                    "country_code": driver.country_code,
                     "selfie_url": driver.selfie_url
                 }
 
