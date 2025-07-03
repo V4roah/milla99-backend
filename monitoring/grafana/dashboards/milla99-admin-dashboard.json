@@ -1,0 +1,248 @@
+{
+  "id": null,
+  "title": "Milla99 - Dashboard Administrativo",
+  "tags": ["milla99", "admin", "business"],
+  "style": "dark",
+  "timezone": "browser",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Resumen de Conductores",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "milla99_total_drivers",
+          "legendFormat": "Total Conductores"
+        },
+        { "expr": "milla99_approved_drivers", "legendFormat": "Aprobados" },
+        {
+          "expr": "milla99_fully_verified_drivers",
+          "legendFormat": "Verificados"
+        },
+        {
+          "expr": "milla99_active_drivers_30_days",
+          "legendFormat": "Activos (30 días)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "displayMode": "list" }
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "title": "Métricas Financieras",
+      "type": "stat",
+      "targets": [
+        { "expr": "milla99_total_income", "legendFormat": "Ingresos Totales" },
+        { "expr": "milla99_net_income", "legendFormat": "Ingreso Neto" },
+        {
+          "expr": "milla99_total_withdrawals",
+          "legendFormat": "Retiros Totales"
+        },
+        {
+          "expr": "milla99_company_net_profit",
+          "legendFormat": "Ganancia Empresa"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "displayMode": "list" },
+          "unit": "currencyCOP"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
+    },
+    {
+      "id": 3,
+      "title": "Servicios Completados vs Cancelados",
+      "type": "piechart",
+      "targets": [
+        { "expr": "milla99_completed_services", "legendFormat": "Completados" },
+        { "expr": "milla99_cancelled_services", "legendFormat": "Cancelados" }
+      ],
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" } }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 }
+    },
+    {
+      "id": 4,
+      "title": "Gestión de Liquidez",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "milla99_total_money_in_system",
+          "legendFormat": "Dinero Total en Sistema"
+        },
+        {
+          "expr": "milla99_available_for_withdrawals",
+          "legendFormat": "Disponible para Retiros"
+        },
+        { "expr": "milla99_reserved_money", "legendFormat": "Dinero Reservado" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "displayMode": "list" },
+          "unit": "currencyCOP"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 }
+    },
+    {
+      "id": 5,
+      "title": "Tasas de Conductores",
+      "type": "gauge",
+      "targets": [
+        {
+          "expr": "milla99_approval_rate",
+          "legendFormat": "Tasa de Aprobación (%)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "displayMode": "gauge" },
+          "max": 100,
+          "min": 0,
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 16 }
+    },
+    {
+      "id": 6,
+      "title": "Tasa de Verificación",
+      "type": "gauge",
+      "targets": [
+        {
+          "expr": "milla99_verification_rate",
+          "legendFormat": "Tasa de Verificación (%)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "displayMode": "gauge" },
+          "max": 100,
+          "min": 0,
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 16 }
+    },
+    {
+      "id": 7,
+      "title": "Tasa de Cancelación",
+      "type": "gauge",
+      "targets": [
+        {
+          "expr": "milla99_cancellation_rate",
+          "legendFormat": "Tasa de Cancelación (%)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "displayMode": "gauge" },
+          "max": 100,
+          "min": 0,
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 16 }
+    },
+    {
+      "id": 8,
+      "title": "Tasa de Actividad",
+      "type": "gauge",
+      "targets": [
+        {
+          "expr": "milla99_activity_rate_30_days",
+          "legendFormat": "Tasa de Actividad (30 días) (%)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "displayMode": "gauge" },
+          "max": 100,
+          "min": 0,
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 16 }
+    },
+    {
+      "id": 9,
+      "title": "Estado de Suspensiones",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "milla99_total_suspended_drivers",
+          "legendFormat": "Total Suspendidos"
+        },
+        {
+          "expr": "milla99_suspensions_lifted",
+          "legendFormat": "Suspensiones Levantadas"
+        },
+        { "expr": "milla99_still_suspended", "legendFormat": "Aún Suspendidos" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "displayMode": "list" }
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 }
+    },
+    {
+      "id": 10,
+      "title": "Desglose de Ingresos",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "milla99_total_gross_revenue",
+          "legendFormat": "Ingresos Brutos"
+        },
+        {
+          "expr": "milla99_driver_net_income",
+          "legendFormat": "Ingresos Conductores"
+        },
+        {
+          "expr": "milla99_platform_commission",
+          "legendFormat": "Comisión Plataforma"
+        },
+        {
+          "expr": "milla99_referral_payments",
+          "legendFormat": "Pagos Referidos"
+        },
+        {
+          "expr": "milla99_driver_savings",
+          "legendFormat": "Ahorros Conductores"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "displayMode": "list" },
+          "unit": "currencyCOP"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 }
+    }
+  ],
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "refresh": "30s",
+  "schemaVersion": 27,
+  "version": 0,
+  "links": []
+}

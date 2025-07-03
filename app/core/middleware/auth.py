@@ -30,6 +30,8 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             ("/static/reports/", "POST"),  # Permitir post (por si acaso)
             ("/metrics", "GET"),  # <-- Agregado para monitoreo
             ("/health", "GET"),   # <-- Agregado para health check
+            # <-- Métricas administrativas para Prometheus
+            ("/admin-metrics-prometheus", "GET"),
             # ("/drivers-position/", "POST"),  # Rutas POST de drivers-position
             # ("/drivers-position/", "GET"),  # Rutas GET de drivers-position
             # Rutas DELETE de drivers-position
