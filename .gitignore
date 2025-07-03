@@ -6,6 +6,7 @@ env/
 
 # Archivos de configuración sensibles
 .env
+.env.docker
 
 # Archivos de bases de datos locales
 *.sqlite3

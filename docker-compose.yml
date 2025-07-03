@@ -1,0 +1,82 @@
+# ============================================================================
+# DOCKER COMPOSE PARA MILLA99 BACKEND
+# ============================================================================
+
+version: "3.8"
+
+services:
+  # ============================================================================
+  # SERVICIO PRINCIPAL: API FASTAPI
+  # ============================================================================
+  milla99-api:
+    build: .
+    container_name: milla99-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - env.docker
+    volumes:
+      - ./app:/app/app
+      - ./logs:/app/logs
+      - ./static:/app/static
+    depends_on:
+      - milla99-mysql
+    networks:
+      - milla99-network
+
+  # ============================================================================
+  # SERVICIO: BASE DE DATOS MYSQL
+  # ============================================================================
+  milla99-mysql:
+    image: mysql:8.0
+    container_name: milla99-mysql
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=milla99_root_password
+      - MYSQL_DATABASE=milla99_db
+      - MYSQL_USER=milla99_user
+      - MYSQL_PASSWORD=milla99_password
+    volumes:
+      - milla99-mysql-data:/var/lib/mysql
+      - milla99-mysql-backups:/backups
+      - ./mysql/init:/docker-entrypoint-initdb.d
+    networks:
+      - milla99-network
+
+  # ============================================================================
+  # SERVICIO: PHPMYADMIN (GESTIÓN VISUAL DE BD - OPCIONAL)
+  # ============================================================================
+  milla99-phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: milla99-phpmyadmin
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      - PMA_HOST=milla99-mysql
+      - PMA_PORT=3306
+      - PMA_USER=milla99_user
+      - PMA_PASSWORD=milla99_password
+    depends_on:
+      - milla99-mysql
+    networks:
+      - milla99-network
+
+# ============================================================================
+# VOLÚMENES PARA PERSISTENCIA DE DATOS
+# ============================================================================
+volumes:
+  milla99-mysql-data:
+    driver: local
+  milla99-mysql-backups:
+    driver: local
+
+# ============================================================================
+# REDES PARA COMUNICACIÓN ENTRE SERVICIOS
+# ============================================================================
+networks:
+  milla99-network:
+    driver: bridge
