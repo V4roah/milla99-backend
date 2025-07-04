@@ -502,10 +502,11 @@ def test_admin_role_hierarchy_with_multiple_approvals():
     print(f"   📊 Logs obtenidos: {len(basic_logs_data)} registros")
     print(f"   ✅ Status: {basic_logs.status_code}")
 
-    # Mostrar detalles de los logs
+    # Mostrar detalles de los logs con emails
     for i, log in enumerate(basic_logs_data):
+        admin_email = log.get('admin_email', 'No email')
         print(
-            f"   📋 Log {i+1}: {log.get('action_type', 'N/A')} - {log.get('description', 'N/A')}")
+            f"   📋 Log {i+1}: {log.get('action_type', 'N/A')} - {log.get('description', 'N/A')} - Admin: {admin_email}")
 
     # 5.2 Admin del sistema ve logs de nivel 1 + propios (3 + 2 = 5)
     print("\n🔍 5.2 Admin del sistema (Role 2) - Logs de nivel 1 + propios:")
@@ -515,10 +516,11 @@ def test_admin_role_hierarchy_with_multiple_approvals():
     print(f"   📊 Logs obtenidos: {len(system_logs_data)} registros")
     print(f"   ✅ Status: {system_logs.status_code}")
 
-    # Mostrar detalles de los logs
+    # Mostrar detalles de los logs con emails
     for i, log in enumerate(system_logs_data):
+        admin_email = log.get('admin_email', 'No email')
         print(
-            f"   📋 Log {i+1}: {log.get('action_type', 'N/A')} - {log.get('description', 'N/A')}")
+            f"   📋 Log {i+1}: {log.get('action_type', 'N/A')} - {log.get('description', 'N/A')} - Admin: {admin_email}")
 
     # 5.3 Super admin ve todos los logs (3 + 2 + 1 = 6)
     print("\n🔍 5.3 Super admin (Role 3) - Todos los logs:")
@@ -528,10 +530,11 @@ def test_admin_role_hierarchy_with_multiple_approvals():
     print(f"   📊 Logs obtenidos: {len(super_logs_data)} registros")
     print(f"   ✅ Status: {super_logs.status_code}")
 
-    # Mostrar detalles de los logs
+    # Mostrar detalles de los logs con emails
     for i, log in enumerate(super_logs_data):
+        admin_email = log.get('admin_email', 'No email')
         print(
-            f"   📋 Log {i+1}: {log.get('action_type', 'N/A')} - {log.get('description', 'N/A')}")
+            f"   📋 Log {i+1}: {log.get('action_type', 'N/A')} - {log.get('description', 'N/A')} - Admin: {admin_email}")
 
     # 6. VERIFICAR JERARQUÍA DE LOGS
     print("\n🔍 Paso 6: Verificando jerarquía de logs...")

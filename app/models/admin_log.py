@@ -141,6 +141,7 @@ class AdminLogCreate(SQLModel):
 class AdminLogRead(BaseModel):
     id: UUID
     admin_id: UUID
+    admin_email: Optional[str] = None  # Email del administrador
     action_type: AdminActionType
     resource_type: str
     resource_id: Optional[str]
@@ -154,6 +155,13 @@ class AdminLogRead(BaseModel):
 
     class Config:
         from_attributes = True
+
+    @classmethod
+    def from_orm_with_admin(cls, obj, admin_email: str = None):
+        """Convierte el objeto ORM a modelo de lectura incluyendo el email del admin"""
+        data = cls.from_orm(obj)
+        data.admin_email = admin_email
+        return data
 
 
 class AdminLogUpdate(SQLModel):

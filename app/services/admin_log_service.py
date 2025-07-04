@@ -105,26 +105,34 @@ class AdminLogService:
         except Exception as e:
             raise Exception(f"Error al obtener log por ID: {str(e)}")
 
-    def get_admin_logs_by_admin(self, admin_id: UUID, current_admin_role: int, limit: int = 50) -> List[AdminLog]:
-        """Obtener logs según el rol del administrador actual"""
+    def get_admin_logs_by_admin(self, admin_id: UUID, current_admin_role: int, limit: int = 50) -> List[AdminLogRead]:
+        """Obtener logs según el rol del administrador actual con email del admin"""
         try:
             if current_admin_role == AdminRole.SUPER.value:  # Super usuario - ve todos los logs
-                query = select(AdminLog).order_by(
+                query = select(AdminLog, Administrador.email).join(Administrador).order_by(
                     desc(AdminLog.created_at)).limit(limit)
             elif current_admin_role == AdminRole.SYSTEM.value:  # Admin del sistema - ve logs de nivel 1 + propios
                 # Obtener logs de admins con role 1 (BASIC) + sus propios logs
-                query = select(AdminLog).join(Administrador).where(
+                query = select(AdminLog, Administrador.email).join(Administrador).where(
                     or_(
                         Administrador.role == AdminRole.BASIC.value,  # Logs de Role 1
                         AdminLog.admin_id == admin_id  # Sus propios logs
                     )
                 ).order_by(desc(AdminLog.created_at)).limit(limit)
             else:  # Admin básico - solo ve sus propios logs
-                query = select(AdminLog).where(
+                query = select(AdminLog, Administrador.email).join(Administrador).where(
                     AdminLog.admin_id == admin_id
                 ).order_by(desc(AdminLog.created_at)).limit(limit)
 
-            return self.db.exec(query).all()
+            results = self.db.exec(query).all()
+            
+            # Convertir a AdminLogRead con email
+            logs_with_email = []
+            for log, admin_email in results:
+                log_read = AdminLogRead.from_orm_with_admin(log, admin_email)
+                logs_with_email.append(log_read)
+            
+            return logs_with_email
         except Exception as e:
             raise Exception(
                 f"Error al obtener logs del administrador: {str(e)}")
