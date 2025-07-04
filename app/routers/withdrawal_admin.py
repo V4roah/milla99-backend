@@ -8,6 +8,7 @@ from app.core.dependencies.admin_auth import get_current_admin
 from app.core.db import SessionDep
 from app.services.withdrawal_service import WithdrawalService
 from app.models.withdrawal import Withdrawal, WithdrawalStatus, WithdrawalRead
+from app.utils.admin_log_decorators import log_withdrawal_approval, log_withdrawal_rejection
 
 router = APIRouter(
     prefix="/withdrawals",
@@ -36,6 +37,8 @@ Actualiza el estado de un retiro (withdrawal) por su ID. Este endpoint está sep
 **Respuesta:**
 Devuelve el objeto de retiro actualizado.
 """)
+# Decorador específico para logging crítico de retiros
+@log_withdrawal_approval()
 async def update_withdrawal_status(
     withdrawal_id: UUID,
     data: UpdateWithdrawalStatusRequest,

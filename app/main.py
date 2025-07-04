@@ -17,6 +17,7 @@ from .core.config import settings
 from .core.init_data import init_data
 from .core.middleware.auth import JWTAuthMiddleware
 from .core.middleware.metrics import MetricsMiddleware
+from .core.middleware.admin_logs import create_admin_log_middleware
 from .core.sio_events import sio
 import socketio
 
@@ -61,6 +62,9 @@ fastapi_app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Agregar middleware de métricas (debe ir antes del de autenticación)
 fastapi_app.add_middleware(MetricsMiddleware)
+
+# Agregar middleware de logs de administrador
+fastapi_app.add_middleware(create_admin_log_middleware)
 
 # Agregar middleware de autenticación
 fastapi_app.add_middleware(JWTAuthMiddleware)
