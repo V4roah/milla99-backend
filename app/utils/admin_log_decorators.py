@@ -5,7 +5,7 @@ from fastapi import Request, Depends
 from sqlmodel import Session
 from app.models.admin_log import AdminActionType, LogSeverity
 from app.core.db import SessionDep
-from app.core.dependencies.admin_auth import get_current_admin
+from app.core.dependencies.admin_auth import get_current_admin_user
 import json
 
 
@@ -19,12 +19,12 @@ def log_withdrawal_approval():
         async def wrapper(
             *args,
             request: Request,
-            db: Session = Depends(SessionDep),
-            current_admin=Depends(get_current_admin),
+            session: SessionDep,
+            current_admin=Depends(get_current_admin_user),
             **kwargs
         ):
             # Ejecutar la función original
-            result = await func(*args, request=request, db=db, current_admin=current_admin, **kwargs)
+            result = await func(*args, request=request, session=session, current_admin=current_admin, **kwargs)
 
             try:
                 # Importar el servicio aquí para evitar circular imports
@@ -46,7 +46,7 @@ def log_withdrawal_approval():
                 description += f", Razón: {reason}"
 
                 # Crear el log específico (complementa el middleware)
-                service = AdminLogService(db)
+                service = AdminLogService(session)
                 service.log_admin_action(
                     admin_id=current_admin.id,
                     action_type=AdminActionType.WITHDRAWAL_APPROVED,
@@ -78,7 +78,7 @@ def log_withdrawal_rejection():
             *args,
             request: Request,
             db: Session = Depends(SessionDep),
-            current_admin=Depends(get_current_admin),
+            current_admin=Depends(get_current_admin_user),
             **kwargs
         ):
             # Ejecutar la función original
@@ -131,7 +131,7 @@ def log_balance_adjustment():
             *args,
             request: Request,
             db: Session = Depends(SessionDep),
-            current_admin=Depends(get_current_admin),
+            current_admin=Depends(get_current_admin_user),
             **kwargs
         ):
             # Ejecutar la función original
@@ -194,7 +194,7 @@ def log_project_settings_update():
             *args,
             request: Request,
             db: Session = Depends(SessionDep),
-            current_admin=Depends(get_current_admin),
+            current_admin=Depends(get_current_admin_user),
             **kwargs
         ):
             # Ejecutar la función original
@@ -257,7 +257,7 @@ def log_admin_password_change():
             *args,
             request: Request,
             db: Session = Depends(SessionDep),
-            current_admin=Depends(get_current_admin),
+            current_admin=Depends(get_current_admin_user),
             **kwargs
         ):
             # Ejecutar la función original
@@ -305,7 +305,7 @@ def log_driver_force_approval():
             *args,
             request: Request,
             db: Session = Depends(SessionDep),
-            current_admin=Depends(get_current_admin),
+            current_admin=Depends(get_current_admin_user),
             **kwargs
         ):
             # Ejecutar la función original
@@ -358,7 +358,7 @@ def log_document_verification():
             *args,
             request: Request,
             db: Session = Depends(SessionDep),
-            current_admin=Depends(get_current_admin),
+            current_admin=Depends(get_current_admin_user),
             **kwargs
         ):
             # Ejecutar la función original
@@ -415,7 +415,7 @@ def log_user_suspension():
             *args,
             request: Request,
             db: Session = Depends(SessionDep),
-            current_admin=Depends(get_current_admin),
+            current_admin=Depends(get_current_admin_user),
             **kwargs
         ):
             # Ejecutar la función original
@@ -468,7 +468,7 @@ def log_user_activation():
             *args,
             request: Request,
             db: Session = Depends(SessionDep),
-            current_admin=Depends(get_current_admin),
+            current_admin=Depends(get_current_admin_user),
             **kwargs
         ):
             # Ejecutar la función original
@@ -525,7 +525,7 @@ def log_critical_action(action_type: AdminActionType, resource_type: str):
             *args,
             request: Request,
             db: Session = Depends(SessionDep),
-            current_admin=Depends(get_current_admin),
+            current_admin=Depends(get_current_admin_user),
             **kwargs
         ):
             # Ejecutar la función original
@@ -577,7 +577,7 @@ def log_with_details(
             *args,
             request: Request,
             db: Session = Depends(SessionDep),
-            current_admin=Depends(get_current_admin),
+            current_admin=Depends(get_current_admin_user),
             **kwargs
         ):
             # Ejecutar la función original

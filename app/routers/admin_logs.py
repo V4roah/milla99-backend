@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Optional
 from uuid import UUID
-from app.core.dependencies.admin_auth import get_current_admin
+from app.core.dependencies.admin_auth import get_current_admin_user
 from app.core.db import SessionDep
 from app.services.admin_log_service import AdminLogService
 from app.models.admin_log import AdminLogRead, AdminLogFilter, AdminLogStatistics
@@ -21,7 +21,7 @@ Obtener logs del administrador actual según su rol:
 """)
 async def get_my_logs(
     session: SessionDep,
-    current_admin: Administrador = Depends(get_current_admin),
+    current_admin: Administrador = Depends(get_current_admin_user),
     limit: int = 50
 ):
     """Obtener logs según el rol del administrador"""
@@ -45,7 +45,7 @@ Obtener estadísticas de logs según el rol del administrador
 """)
 async def get_log_statistics(
     session: SessionDep,
-    current_admin: Administrador = Depends(get_current_admin),
+    current_admin: Administrador = Depends(get_current_admin_user),
     days: int = 30
 ):
     """Obtener estadísticas según el rol"""
@@ -65,7 +65,7 @@ Filtrar logs según criterios (respetando permisos de rol)
 """)
 async def filter_logs(
     session: SessionDep,
-    current_admin: Administrador = Depends(get_current_admin),
+    current_admin: Administrador = Depends(get_current_admin_user),
     filters: AdminLogFilter = Depends()
 ):
     """Filtrar logs con restricciones de rol"""

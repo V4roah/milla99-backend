@@ -4,10 +4,11 @@ import logging
 from typing import List, Optional
 from pydantic import BaseModel, ConfigDict
 
-from app.core.dependencies.admin_auth import get_current_admin
+from app.core.dependencies.admin_auth import get_current_admin_user
 from app.core.db import SessionDep
 from app.services.withdrawal_service import WithdrawalService
 from app.models.withdrawal import Withdrawal, WithdrawalStatus, WithdrawalRead
+from app.models.administrador import Administrador
 from app.utils.admin_log_decorators import log_withdrawal_approval, log_withdrawal_rejection
 
 router = APIRouter(
@@ -44,7 +45,7 @@ async def update_withdrawal_status(
     data: UpdateWithdrawalStatusRequest,
     request: Request,
     session: SessionDep,
-    current_admin=Depends(get_current_admin)
+    current_admin: Administrador = Depends(get_current_admin_user)
 ):
     service = WithdrawalService(session)
     try:
@@ -82,7 +83,7 @@ Devuelve una lista de retiros con información detallada del usuario y la cuenta
 async def list_withdrawals(
     filters: ListWithdrawalsRequest,
     session: SessionDep,
-    current_admin=Depends(get_current_admin)
+    current_admin: Administrador = Depends(get_current_admin_user)
 ):
     service = WithdrawalService(session)
     try:

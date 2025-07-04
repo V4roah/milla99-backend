@@ -111,9 +111,13 @@ class AdminLogService:
             if current_admin_role == AdminRole.SUPER.value:  # Super usuario - ve todos los logs
                 query = select(AdminLog).order_by(
                     desc(AdminLog.created_at)).limit(limit)
-            elif current_admin_role == AdminRole.SYSTEM.value:  # Admin del sistema - ve logs de nivel 1
+            elif current_admin_role == AdminRole.SYSTEM.value:  # Admin del sistema - ve logs de nivel 1 + propios
+                # Obtener logs de admins con role 1 (BASIC) + sus propios logs
                 query = select(AdminLog).join(Administrador).where(
-                    Administrador.role == AdminRole.BASIC.value
+                    or_(
+                        Administrador.role == AdminRole.BASIC.value,  # Logs de Role 1
+                        AdminLog.admin_id == admin_id  # Sus propios logs
+                    )
                 ).order_by(desc(AdminLog.created_at)).limit(limit)
             else:  # Admin básico - solo ve sus propios logs
                 query = select(AdminLog).where(
