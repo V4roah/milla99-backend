@@ -105,12 +105,19 @@ class AdminLogService:
         except Exception as e:
             raise Exception(f"Error al obtener log por ID: {str(e)}")
 
-    def get_admin_logs_by_admin(self, admin_id: UUID, limit: int = 50) -> List[AdminLog]:
-        """Obtener logs de un administrador específico"""
+    def get_admin_logs_by_admin(self, admin_id: UUID, current_admin_role: int, limit: int = 50) -> List[AdminLog]:
+        """Obtener logs según el rol del administrador actual"""
         try:
-            query = select(AdminLog).where(
-                AdminLog.admin_id == admin_id
-            ).order_by(desc(AdminLog.created_at)).limit(limit)
+            if current_admin_role == 3:  # Super usuario - ve todos los logs
+                query = select(AdminLog).order_by(desc(AdminLog.created_at)).limit(limit)
+            elif current_admin_role == 2:  # Admin del sistema - ve logs de nivel 1
+                query = select(AdminLog).join(Administrador).where(
+                    Administrador.role == 1
+                ).order_by(desc(AdminLog.created_at)).limit(limit)
+            else:  # Admin básico - solo ve sus propios logs
+                query = select(AdminLog).where(
+                    AdminLog.admin_id == admin_id
+                ).order_by(desc(AdminLog.created_at)).limit(limit)
 
             return self.db.exec(query).all()
         except Exception as e:

@@ -194,18 +194,45 @@ def init_payment_methods(session: Session):
 
 
 def create_admin(session: Session):
-    admin_email = "admin"
-    admin_password = "admin"
-    admin_role = 1
-    hashed_password = bcrypt.hash(admin_password)
-    admin = session.exec(
-        select(Administrador).where(Administrador.email == admin_email)
-    ).first()
-    if not admin:
+    # Verificar si ya existen admins
+    existing_admin = session.exec(select(Administrador).where(
+        Administrador.email == "admin")).first()
+    if existing_admin:
+        return
+
+    # Crear admins con diferentes roles
+    admins = [
+        {
+            "email": "admin",
+            "password": "admin",
+            "role": 1,
+            "description": "Administrador básico - Solo sus logs"
+        },
+        {
+            "email": "system_admin",
+            "password": "system123",
+            "role": 2,
+            "description": "Administrador del sistema - Logs de nivel 1"
+        },
+        {
+            "email": "super_admin",
+            "password": "super123",
+            "role": 3,
+            "description": "Super usuario - Todos los logs"
+        }
+    ]
+
+    for admin_data in admins:
+        hashed_password = bcrypt.hash(admin_data["password"])
         admin = Administrador(
-            email=admin_email, password=hashed_password, role=admin_role)
+            email=admin_data["email"],
+            password=hashed_password,
+            role=admin_data["role"]
+        )
         session.add(admin)
-        session.commit()
+
+    session.commit()
+    print("✅ Admins creados con roles jerárquicos")
 
 
 # ============================================================================
