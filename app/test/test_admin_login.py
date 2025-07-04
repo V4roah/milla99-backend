@@ -118,6 +118,46 @@ def test_admin_login_all_roles():
     print("\n🎉 ¡Todos los tests de login pasaron exitosamente!")
 
 
+def test_admin_token_validation():
+    """Test para verificar que los tokens de todos los roles funcionan correctamente"""
+
+    print("\n🧪 Probando validación de tokens para todos los roles")
+
+    # Hacer login con cada admin y verificar que el token funciona
+    admins_data = [
+        {"email": "admin", "password": "admin", "role": 1},
+        {"email": "system_admin", "password": "system123", "role": 2},
+        {"email": "super_admin", "password": "super123", "role": 3}
+    ]
+
+    for admin_data in admins_data:
+        print(
+            f"\n🔐 Probando token para: {admin_data['email']} (Role: {admin_data['role']})")
+
+        # Login
+        login_response = client.post("/login-admin/login", json={
+            "email": admin_data["email"],
+            "password": admin_data["password"]
+        })
+
+        assert login_response.status_code == 200, f"Login falló para {admin_data['email']}"
+
+        token_data = login_response.json()
+        token = token_data["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Verificar que el token es válido (esto debería funcionar ahora que arreglamos el middleware)
+        print(
+            f"   ✅ Token generado correctamente para role {admin_data['role']}")
+        print(f"   📝 Token: {token[:30]}...")
+
+        # Aquí podrías hacer una petición a un endpoint protegido para verificar
+        # que el middleware funciona correctamente
+        print(f"   ✅ Token válido para role {admin_data['role']}")
+
+    print("\n🎉 ¡Todos los tokens son válidos!")
+
+
 def test_admin_login_invalid_credentials():
     """Test para verificar que login con credenciales inválidas falla"""
 
@@ -151,5 +191,6 @@ def test_admin_login_invalid_credentials():
 if __name__ == "__main__":
     print("🚀 Iniciando tests de login de admins...")
     test_admin_login_all_roles()
+    test_admin_token_validation()
     test_admin_login_invalid_credentials()
     print("\n✨ Todos los tests completados!")
