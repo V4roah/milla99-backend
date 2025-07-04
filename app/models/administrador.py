@@ -1,5 +1,5 @@
-from sqlmodel import SQLModel, Field
-from typing import Optional
+from sqlmodel import SQLModel, Field, Relationship
+from typing import Optional, List
 from datetime import datetime
 from uuid import UUID, uuid4
 import pytz
@@ -20,3 +20,6 @@ class Administrador(SQLModel, table=True):
         nullable=False,
         sa_column_kwargs={"onupdate": lambda: datetime.now(COLOMBIA_TZ)}
     )
+
+    # Relación con logs de administrador
+    admin_logs: List["AdminLog"] = Relationship(back_populates="admin")

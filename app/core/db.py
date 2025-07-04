@@ -10,7 +10,8 @@ from app.models import (
     Role, UserHasRole, DocumentType, DriverInfo, VehicleInfo,
     VehicleType, User, DriverDocuments, ClientRequest, DriverPosition,
     DriverTripOffer, ProjectSettings, Referral, CompanyAccount,
-    DriverSavings, Transaction, VerifyMount, TypeService, ConfigServiceValue
+    DriverSavings, Transaction, VerifyMount, TypeService, ConfigServiceValue,
+    AdminLog, Administrador
 )
 
 # ============================================================================
