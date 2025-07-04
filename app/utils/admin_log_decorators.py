@@ -4,7 +4,6 @@ from uuid import UUID
 from fastapi import Request, Depends
 from sqlmodel import Session
 from app.models.admin_log import AdminActionType, LogSeverity
-from app.services.admin_log_service import AdminLogService
 from app.core.db import SessionDep
 from app.core.dependencies.admin_auth import get_current_admin
 import json
@@ -28,6 +27,9 @@ def log_withdrawal_approval():
             result = await func(*args, request=request, db=db, current_admin=current_admin, **kwargs)
 
             try:
+                # Importar el servicio aquí para evitar circular imports
+                from app.services.admin_log_service import AdminLogService
+
                 # Extraer detalles específicos de la función
                 withdrawal_id = kwargs.get('withdrawal_id') or kwargs.get('id')
                 amount = kwargs.get('amount')
@@ -83,6 +85,9 @@ def log_withdrawal_rejection():
             result = await func(*args, request=request, db=db, current_admin=current_admin, **kwargs)
 
             try:
+                # Importar el servicio aquí para evitar circular imports
+                from app.services.admin_log_service import AdminLogService
+
                 # Extraer detalles específicos
                 withdrawal_id = kwargs.get('withdrawal_id') or kwargs.get('id')
                 reason = kwargs.get('reason', 'No especificada')
@@ -133,6 +138,9 @@ def log_balance_adjustment():
             result = await func(*args, request=request, db=db, current_admin=current_admin, **kwargs)
 
             try:
+                # Importar el servicio aquí para evitar circular imports
+                from app.services.admin_log_service import AdminLogService
+
                 # Extraer detalles específicos
                 user_id = kwargs.get('user_id')
                 old_balance = kwargs.get('old_balance')
@@ -193,6 +201,9 @@ def log_project_settings_update():
             result = await func(*args, request=request, db=db, current_admin=current_admin, **kwargs)
 
             try:
+                # Importar el servicio aquí para evitar circular imports
+                from app.services.admin_log_service import AdminLogService
+
                 # Capturar datos de la request
                 ip_address = request.client.host if request.client else None
                 user_agent = request.headers.get("user-agent")
@@ -253,6 +264,9 @@ def log_admin_password_change():
             result = await func(*args, request=request, db=db, current_admin=current_admin, **kwargs)
 
             try:
+                # Importar el servicio aquí para evitar circular imports
+                from app.services.admin_log_service import AdminLogService
+
                 # Capturar datos de la request
                 ip_address = request.client.host if request.client else None
                 user_agent = request.headers.get("user-agent")
@@ -298,6 +312,9 @@ def log_driver_force_approval():
             result = await func(*args, request=request, db=db, current_admin=current_admin, **kwargs)
 
             try:
+                # Importar el servicio aquí para evitar circular imports
+                from app.services.admin_log_service import AdminLogService
+
                 # Extraer detalles específicos
                 driver_id = kwargs.get('driver_id') or kwargs.get('id')
                 reason = kwargs.get('reason', 'Aprobación manual')
@@ -348,6 +365,9 @@ def log_document_verification():
             result = await func(*args, request=request, db=db, current_admin=current_admin, **kwargs)
 
             try:
+                # Importar el servicio aquí para evitar circular imports
+                from app.services.admin_log_service import AdminLogService
+
                 # Extraer detalles específicos
                 document_id = kwargs.get('document_id') or kwargs.get('id')
                 status = kwargs.get('status', 'approved')
@@ -402,6 +422,9 @@ def log_user_suspension():
             result = await func(*args, request=request, db=db, current_admin=current_admin, **kwargs)
 
             try:
+                # Importar el servicio aquí para evitar circular imports
+                from app.services.admin_log_service import AdminLogService
+
                 # Extraer detalles específicos
                 user_id = kwargs.get('user_id') or kwargs.get('id')
                 reason = kwargs.get('reason', 'No especificada')
@@ -452,6 +475,9 @@ def log_user_activation():
             result = await func(*args, request=request, db=db, current_admin=current_admin, **kwargs)
 
             try:
+                # Importar el servicio aquí para evitar circular imports
+                from app.services.admin_log_service import AdminLogService
+
                 # Extraer detalles específicos
                 user_id = kwargs.get('user_id') or kwargs.get('id')
                 reason = kwargs.get('reason', 'Activación manual')
@@ -506,6 +532,9 @@ def log_critical_action(action_type: AdminActionType, resource_type: str):
             result = await func(*args, request=request, db=db, current_admin=current_admin, **kwargs)
 
             try:
+                # Importar el servicio aquí para evitar circular imports
+                from app.services.admin_log_service import AdminLogService
+
                 # Capturar datos de la request
                 ip_address = request.client.host if request.client else None
                 user_agent = request.headers.get("user-agent")
@@ -555,6 +584,9 @@ def log_with_details(
             result = await func(*args, request=request, db=db, current_admin=current_admin, **kwargs)
 
             try:
+                # Importar el servicio aquí para evitar circular imports
+                from app.services.admin_log_service import AdminLogService
+
                 # Capturar datos de la request
                 ip_address = request.client.host if request.client else None
                 user_agent = request.headers.get("user-agent")

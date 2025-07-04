@@ -5,6 +5,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 import pytz
 from pydantic import BaseModel
+from sqlalchemy import Column, JSON
 
 # Timezone para Colombia
 COLOMBIA_TZ = pytz.timezone("America/Bogota")
@@ -95,9 +96,9 @@ class AdminLog(SQLModel, table=True):
     resource_id: Optional[str] = Field(
         default=None, description="ID del recurso afectado")
     old_values: Optional[dict] = Field(
-        default=None, description="Valores anteriores (JSON)")
+        default=None, description="Valores anteriores (JSON)", sa_column=Column(JSON))
     new_values: Optional[dict] = Field(
-        default=None, description="Valores nuevos (JSON)")
+        default=None, description="Valores nuevos (JSON)", sa_column=Column(JSON))
     ip_address: Optional[str] = Field(
         default=None, description="Dirección IP del administrador")
     user_agent: Optional[str] = Field(

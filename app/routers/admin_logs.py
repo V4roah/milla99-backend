@@ -20,9 +20,9 @@ Obtener logs del administrador actual según su rol:
 - Role 3 (Super admin): Todos los logs
 """)
 async def get_my_logs(
-    limit: int = 50,
-    session: SessionDep = Depends(),
-    current_admin: Administrador = Depends(get_current_admin)
+    session: SessionDep,
+    current_admin: Administrador = Depends(get_current_admin),
+    limit: int = 50
 ):
     """Obtener logs según el rol del administrador"""
     try:
@@ -44,9 +44,9 @@ async def get_my_logs(
 Obtener estadísticas de logs según el rol del administrador
 """)
 async def get_log_statistics(
-    days: int = 30,
-    session: SessionDep = Depends(),
-    current_admin: Administrador = Depends(get_current_admin)
+    session: SessionDep,
+    current_admin: Administrador = Depends(get_current_admin),
+    days: int = 30
 ):
     """Obtener estadísticas según el rol"""
     try:
@@ -64,9 +64,9 @@ async def get_log_statistics(
 Filtrar logs según criterios (respetando permisos de rol)
 """)
 async def filter_logs(
-    filters: AdminLogFilter,
-    session: SessionDep = Depends(),
-    current_admin: Administrador = Depends(get_current_admin)
+    session: SessionDep,
+    current_admin: Administrador = Depends(get_current_admin),
+    filters: AdminLogFilter = Depends()
 ):
     """Filtrar logs con restricciones de rol"""
     try:
