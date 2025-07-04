@@ -5,7 +5,7 @@ from app.core.dependencies.admin_auth import get_current_admin
 from app.core.db import SessionDep
 from app.services.admin_log_service import AdminLogService
 from app.models.admin_log import AdminLogRead, AdminLogFilter, AdminLogStatistics
-from app.models.administrador import Administrador
+from app.models.administrador import Administrador, AdminRole
 
 router = APIRouter(
     prefix="/admin-logs",
@@ -73,9 +73,9 @@ async def filter_logs(
         service = AdminLogService(session)
 
         # Aplicar restricciones según rol
-        if current_admin.role == 1:  # Solo sus logs
+        if current_admin.role == AdminRole.BASIC.value:  # Solo sus logs
             filters.admin_id = current_admin.id
-        elif current_admin.role == 2:  # Solo logs de nivel 1
+        elif current_admin.role == AdminRole.SYSTEM.value:  # Solo logs de nivel 1
             # Filtrar para mostrar solo admins de nivel 1
             pass  # Implementar filtro adicional
 

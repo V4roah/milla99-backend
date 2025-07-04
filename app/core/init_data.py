@@ -27,7 +27,7 @@ from app.models.driver_trip_offer import DriverTripOffer
 from geoalchemy2.shape import from_shape
 from shapely.geometry import Point
 from uuid import UUID
-from app.models.administrador import Administrador
+from app.models.administrador import Administrador, AdminRole
 from passlib.hash import bcrypt
 from app.models.payment_method import PaymentMethod
 import random
@@ -205,19 +205,19 @@ def create_admin(session: Session):
         {
             "email": "admin",
             "password": "admin",
-            "role": 1,
+            "role": AdminRole.BASIC,
             "description": "Administrador básico - Solo sus logs"
         },
         {
             "email": "system_admin",
             "password": "system123",
-            "role": 2,
+            "role": AdminRole.SYSTEM,
             "description": "Administrador del sistema - Logs de nivel 1"
         },
         {
             "email": "super_admin",
             "password": "super123",
-            "role": 3,
+            "role": AdminRole.SUPER,
             "description": "Super usuario - Todos los logs"
         }
     ]
@@ -227,7 +227,7 @@ def create_admin(session: Session):
         admin = Administrador(
             email=admin_data["email"],
             password=hashed_password,
-            role=admin_data["role"]
+            role=admin_data["role"].value
         )
         session.add(admin)
 
@@ -870,7 +870,6 @@ def init_referral_data(session: Session, users):
         {"user_phone": "3004444449", "referrer_phone": "3004442444"},
         {"user_phone": "3004444450", "referrer_phone": "3004884450"},
         {"user_phone": "3004444451", "referrer_phone": "3004444450"},
-        {"user_phone": "3004444452", "referrer_phone": "3004444451"},
         {"user_phone": "3334444452", "referrer_phone": "3004444452"},
         {"user_phone": "3004444453", "referrer_phone": "3004444446"},
         {"user_phone": "3004444454", "referrer_phone": "3004444449"},

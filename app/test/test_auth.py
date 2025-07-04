@@ -1,6 +1,10 @@
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
+from app.core.db import engine
+from sqlmodel import Session, select
+from app.models.user import User
+from app.models.administrador import AdminRole
 
 client = TestClient(app)
 
@@ -66,7 +70,8 @@ def test_admin_login_success():
     resp_json = response.json()
     assert "access_token" in resp_json
     assert resp_json["token_type"] == "bearer"
-    assert resp_json["role"] == 1  # O el valor que corresponda a admin
+    # O el valor que corresponda a admin
+    assert resp_json["role"] == AdminRole.BASIC.value
 
 
 def test_admin_login_fail():
@@ -118,9 +123,6 @@ def test_access_with_other_user_token():
     # Intentar acceder a los datos protegidos de usuario 2 con el token de usuario 1
     # (por ejemplo, /users/me debería devolver los datos del usuario autenticado, pero si hay endpoints tipo /users/{id}, prueba con ese)
     # Aquí simulamos que el endpoint requiere ser owner
-    from app.models.user import User
-    from app.core.db import engine
-    from sqlmodel import Session, select
     with Session(engine) as session:
         user2 = session.exec(select(User).where(
             User.phone_number == phone_number_2)).first()

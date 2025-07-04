@@ -7,7 +7,7 @@ from app.models.admin_log import (
     AdminLog, AdminLogCreate, AdminLogRead, AdminLogUpdate,
     AdminLogFilter, AdminLogStatistics, AdminActionType, LogSeverity
 )
-from app.models.administrador import Administrador
+from app.models.administrador import Administrador, AdminRole
 from app.core.db import SessionDep
 
 # Timezone para Colombia
@@ -108,11 +108,12 @@ class AdminLogService:
     def get_admin_logs_by_admin(self, admin_id: UUID, current_admin_role: int, limit: int = 50) -> List[AdminLog]:
         """Obtener logs según el rol del administrador actual"""
         try:
-            if current_admin_role == 3:  # Super usuario - ve todos los logs
-                query = select(AdminLog).order_by(desc(AdminLog.created_at)).limit(limit)
-            elif current_admin_role == 2:  # Admin del sistema - ve logs de nivel 1
+            if current_admin_role == AdminRole.SUPER.value:  # Super usuario - ve todos los logs
+                query = select(AdminLog).order_by(
+                    desc(AdminLog.created_at)).limit(limit)
+            elif current_admin_role == AdminRole.SYSTEM.value:  # Admin del sistema - ve logs de nivel 1
                 query = select(AdminLog).join(Administrador).where(
-                    Administrador.role == 1
+                    Administrador.role == AdminRole.BASIC.value
                 ).order_by(desc(AdminLog.created_at)).limit(limit)
             else:  # Admin básico - solo ve sus propios logs
                 query = select(AdminLog).where(

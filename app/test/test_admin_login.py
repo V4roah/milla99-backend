@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.core.db import engine
 from sqlmodel import Session, select
-from app.models.administrador import Administrador
+from app.models.administrador import Administrador, AdminRole
 import traceback
 
 client = TestClient(app)
@@ -17,19 +17,19 @@ def test_admin_login_all_roles():
         {
             "email": "admin",
             "password": "admin",
-            "role": 1,
+            "role": AdminRole.BASIC,
             "description": "Admin básico"
         },
         {
             "email": "system_admin",
             "password": "system123",
-            "role": 2,
+            "role": AdminRole.SYSTEM,
             "description": "Admin del sistema"
         },
         {
             "email": "super_admin",
             "password": "super123",
-            "role": 3,
+            "role": AdminRole.SUPER,
             "description": "Super admin"
         }
     ]
@@ -99,7 +99,8 @@ def test_admin_login_all_roles():
         print(f"   Token type: {token_type}")
 
         # Verificar que el role recibido coincide con el esperado
-        assert role == admin_data["role"], f"Role incorrecto para {admin_data['email']}. Esperado: {admin_data['role']}, Recibido: {role}"
+        assert role == admin_data[
+            "role"].value, f"Role incorrecto para {admin_data['email']}. Esperado: {admin_data['role'].value}, Recibido: {role}"
 
         # Verificar que el admin existe en la DB con el rol correcto
         with Session(engine) as session:
@@ -110,7 +111,7 @@ def test_admin_login_all_roles():
 
             assert admin is not None, f"Admin {admin_data['email']} no existe en la DB"
             assert admin.role == admin_data[
-                "role"], f"Role incorrecto para {admin_data['email']}"
+                "role"].value, f"Role incorrecto para {admin_data['email']}"
 
             print(
                 f"✅ Admin {admin_data['email']} existe en DB con role {admin.role}")
@@ -125,9 +126,9 @@ def test_admin_token_validation():
 
     # Hacer login con cada admin y verificar que el token funciona
     admins_data = [
-        {"email": "admin", "password": "admin", "role": 1},
-        {"email": "system_admin", "password": "system123", "role": 2},
-        {"email": "super_admin", "password": "super123", "role": 3}
+        {"email": "admin", "password": "admin", "role": AdminRole.BASIC},
+        {"email": "system_admin", "password": "system123", "role": AdminRole.SYSTEM},
+        {"email": "super_admin", "password": "super123", "role": AdminRole.SUPER}
     ]
 
     for admin_data in admins_data:

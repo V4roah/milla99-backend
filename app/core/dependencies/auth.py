@@ -5,6 +5,7 @@ from jose import jwt, JWTError
 from app.core.config import settings
 from app.core.db import SessionDep
 from app.models.user import User
+from app.models.administrador import AdminRole
 from sqlmodel import select
 from uuid import UUID
 
@@ -42,7 +43,7 @@ def get_current_user(request: Request, session: SessionDep, credentials: HTTPAut
         request.state.user_id = UUID(user_id)
 
         role = payload.get("role")
-        if role == 1:  # Si es admin, no permitir acceso
+        if role == AdminRole.BASIC.value:  # Si es admin, no permitir acceso
             raise credentials_exception
 
         # Obtener el usuario real desde la base de datos
