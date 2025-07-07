@@ -169,6 +169,10 @@ def init_project_settings():
             cancel_max_weeks=10,
             day_suspension=7,
             request_timeout_minutes=5,
+            # Configuración para conductores ocupados
+            max_wait_time_for_busy_driver=15.0,  # 15 minutos máximo de espera
+            max_distance_for_busy_driver=2.0,    # 2 km máximo de distancia
+            max_transit_time_for_busy_driver=5.0,  # 5 minutos máximo de tránsito
             created_at=datetime(2025, 5, 20, 15, 35, 26),
             updated_at=datetime(2025, 5, 20, 15, 35, 26)
         )

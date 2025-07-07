@@ -24,6 +24,13 @@ class ProjectSettingsBase(SQLModel):
     day_suspension: Optional[int] = None  # Dias de suspension por multa
     # Tiempo en minutos para que expire una solicitud
     request_timeout_minutes: Optional[int] = Field(default=5)
+    # Configuración para conductores ocupados
+    # Tiempo máximo en minutos para esperar conductor ocupado
+    max_wait_time_for_busy_driver: Optional[float] = Field(default=15.0)
+    # Distancia máxima en km para considerar conductor ocupado
+    max_distance_for_busy_driver: Optional[float] = Field(default=2.0)
+    max_transit_time_for_busy_driver: Optional[float] = Field(
+        default=5.0)  # Tiempo máximo de tránsito en minutos
 
 
 class ProjectSettings(ProjectSettingsBase, table=True):
@@ -56,3 +63,7 @@ class ProjectSettingsUpdate(SQLModel):
     cancel_max_weeks: Optional[int] = None
     day_suspension: Optional[int] = None
     request_timeout_minutes: Optional[int] = None
+    # Configuración para conductores ocupados
+    max_wait_time_for_busy_driver: Optional[float] = None
+    max_distance_for_busy_driver: Optional[float] = None
+    max_transit_time_for_busy_driver: Optional[float] = None
