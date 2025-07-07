@@ -23,6 +23,7 @@ from app.services.client_requests_service import (
     update_review_service,
     get_driver_requests_by_status_service,
     find_optimal_drivers,
+    find_optimal_drivers_with_search_service,
     assign_busy_driver
 )
 from sqlalchemy.orm import Session
@@ -356,8 +357,8 @@ def create_request(
             )
         db_obj = create_client_request(
             session, request_data, id_client=user_id)
-        # Lógica de asignación de conductores ocupados/disponibles (no afecta el response)
-        optimal_drivers = find_optimal_drivers(
+        # Lógica de asignación de conductores ocupados/disponibles usando el nuevo DriverSearchService
+        optimal_drivers = find_optimal_drivers_with_search_service(
             session,
             request_data.pickup_lat,
             request_data.pickup_lng,

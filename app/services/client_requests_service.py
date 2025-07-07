@@ -27,6 +27,7 @@ from app.models.payment_method import PaymentMethod
 from app.services.transaction_service import TransactionService
 from app.models.transaction import TransactionType
 from app.services.notification_service import NotificationService
+from app.services.driver_search_service import DriverSearchService
 import logging
 import pytz
 
@@ -1658,6 +1659,100 @@ def find_optimal_drivers(
         x["priority"], x.get("estimated_time", float('inf'))))
 
     return all_drivers
+
+
+def find_optimal_drivers_with_search_service(
+    session: Session,
+    client_lat: float,
+    client_lng: float,
+    type_service_id: int,
+    max_distance: float = 5.0
+) -> List[Dict]:
+    """
+    Busca conductores óptimos usando el nuevo DriverSearchService
+    """
+    try:
+        # Inicializar el servicio de búsqueda
+        search_service = DriverSearchService(session)
+
+        # Buscar conductores disponibles (PRIORIDAD 1)
+        available_drivers = search_service.find_available_drivers(
+            client_lat, client_lng, type_service_id
+        )
+
+        # Buscar conductores ocupados cercanos (PRIORIDAD 2)
+        busy_drivers = search_service.find_nearby_busy_drivers(
+            client_lat, client_lng, type_service_id
+        )
+
+        # Calcular prioridades para conductores disponibles
+        available_drivers_with_priority = search_service.calculate_priorities(
+            available_drivers, client_lat, client_lng
+        )
+
+        # Calcular prioridades para conductores ocupados
+        busy_drivers_with_priority = search_service.calculate_priorities(
+            busy_drivers, client_lat, client_lng
+        )
+
+        # Combinar y formatear resultados
+        all_drivers = []
+
+        # Agregar conductores disponibles con prioridad 1
+        for driver_info in available_drivers_with_priority:
+            driver = driver_info["driver"]
+            all_drivers.append({
+                "user_id": str(driver.user_id),
+                "driver_info_id": str(driver.id),
+                "full_name": driver.user.full_name if driver.user else "N/A",
+                "phone_number": driver.user.phone_number if driver.user else "N/A",
+                "distance": driver_info["distance"],
+                "estimated_time": driver_info["estimated_time"],
+                "priority_score": driver_info.get("priority_score", 0),
+                "type": "available",
+                "priority": 1,
+                "vehicle_info": {
+                    "brand": driver.vehicle_info[0].brand if driver.vehicle_info else "N/A",
+                    "model": driver.vehicle_info[0].model if driver.vehicle_info else "N/A",
+                    "plate": driver.vehicle_info[0].plate if driver.vehicle_info else "N/A"
+                } if driver.vehicle_info else {}
+            })
+
+        # Agregar conductores ocupados con prioridad 2
+        for driver_info in busy_drivers_with_priority:
+            driver = driver_info["driver"]
+            all_drivers.append({
+                "user_id": str(driver.user_id),
+                "driver_info_id": str(driver.id),
+                "full_name": driver.user.full_name if driver.user else "N/A",
+                "phone_number": driver.user.phone_number if driver.user else "N/A",
+                "distance": driver_info["distance"],
+                "estimated_time": driver_info["total_time"],
+                "priority_score": driver_info.get("priority_score", 0),
+                "type": "busy",
+                "priority": 2,
+                "total_time": driver_info["total_time"],
+                "vehicle_info": {
+                    "brand": driver.vehicle_info[0].brand if driver.vehicle_info else "N/A",
+                    "model": driver.vehicle_info[0].model if driver.vehicle_info else "N/A",
+                    "plate": driver.vehicle_info[0].plate if driver.vehicle_info else "N/A"
+                } if driver.vehicle_info else {}
+            })
+
+        # Ordenar por prioridad y puntuación
+        all_drivers.sort(key=lambda x: (
+            x["priority"],
+            -x.get("priority_score", 0),  # Mayor puntuación = mejor
+            x.get("estimated_time", float('inf'))
+        ))
+
+        return all_drivers
+
+    except Exception as e:
+        print(f"Error en find_optimal_drivers_with_search_service: {e}")
+        traceback.print_exc()
+        # Fallback a la función original si hay error
+        return find_optimal_drivers(session, client_lat, client_lng, type_service_id, max_distance)
 
 
 def find_available_drivers(
