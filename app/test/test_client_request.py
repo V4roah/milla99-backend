@@ -7,6 +7,9 @@ from app.models.project_settings import ProjectSettings
 from sqlmodel import Session
 from app.core.db import engine
 from uuid import UUID
+import pytz
+
+COLOMBIA_TZ = pytz.timezone("America/Bogota")
 
 client = TestClient(app)
 
@@ -789,7 +792,7 @@ def test_client_request_timeout():
 
         # Actualizar el created_at a hace más del timeout
         old_created_at = datetime.now(
-            timezone.utc) - timedelta(minutes=timeout_minutes + 1)
+            COLOMBIA_TZ) - timedelta(minutes=timeout_minutes + 1)
         client_request = session.query(ClientRequest).filter(
             ClientRequest.id == client_request_id).first()
         assert client_request is not None

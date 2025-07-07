@@ -5,6 +5,8 @@ from datetime import datetime
 from sqlmodel import Session, select
 from app.models.user_has_roles import UserHasRole, RoleStatus
 from app.models.role import Role
+from app.core.db import engine
+from uuid import UUID
 import time
 
 client = TestClient(app)
@@ -94,7 +96,7 @@ def test_get_me_driver_approved():
     headers = {"Authorization": f"Bearer {token}"}
 
     # Simular que el usuario tiene rol DRIVER aprobado (manipulación directa de BD)
-    with Session(client.app.state.engine) as session:
+    with Session(engine) as session:
         # Buscar el rol DRIVER
         driver_role = session.exec(
             select(Role).where(Role.id == "DRIVER")).first()
@@ -102,7 +104,7 @@ def test_get_me_driver_approved():
 
         # Crear la relación UserHasRole con status APPROVED
         user_role = UserHasRole(
-            id_user=user_id,
+            id_user=UUID(user_id),
             id_rol="DRIVER",
             is_verified=True,
             status=RoleStatus.APPROVED,

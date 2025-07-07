@@ -181,7 +181,17 @@ class UserService:
         return UserRead.model_validate(user_dict, from_attributes=True)
 
     def update_user(self, user_id: UUID, user_data: UserUpdate) -> User:
-        user = self.get_user(user_id)
+        # Obtener el usuario real de la base de datos, no el UserRead
+        user = self.session.exec(
+            select(User).where(User.id == user_id)
+        ).first()
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
         user_data_dict = user_data.model_dump(exclude_unset=True)
         user.sqlmodel_update(user_data_dict)
         self.session.add(user)
