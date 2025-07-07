@@ -81,6 +81,26 @@ class ClientRequest(SQLModel, table=True):
         sa_column=Column(Geometry(geometry_type="POINT", srid=4326)))
     destination_position: Optional[object] = Field(
         sa_column=Column(Geometry(geometry_type="POINT", srid=4326)))
+
+    # Campos para gestión de conductores ocupados
+    assigned_busy_driver_id: Optional[UUID] = Field(
+        default=None,
+        foreign_key="user.id",
+        description="ID del conductor ocupado asignado a esta solicitud"
+    )
+    estimated_pickup_time: Optional[datetime] = Field(
+        default=None,
+        description="Tiempo estimado de recogida cuando el conductor está ocupado"
+    )
+    driver_current_trip_remaining_time: Optional[float] = Field(
+        default=None,
+        description="Tiempo restante del viaje actual del conductor en minutos"
+    )
+    driver_transit_time: Optional[float] = Field(
+        default=None,
+        description="Tiempo de tránsito desde el destino actual hasta el cliente en minutos"
+    )
+
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(pytz.timezone("America/Bogota")), nullable=False)
     updated_at: datetime = Field(
@@ -119,6 +139,18 @@ class ClientRequest(SQLModel, table=True):
         back_populates="client_request")
     trip_stops: List["TripStop"] = Relationship(
         back_populates="client_request"
+    )
+
+    # Relación con conductor ocupado asignado
+    assigned_busy_driver: Optional["User"] = Relationship(
+        back_populates="busy_driver_requests",
+        sa_relationship_kwargs={
+            "foreign_keys": "[ClientRequest.assigned_busy_driver_id]"}
+    )
+
+    # Relación con DriverInfo para solicitudes pendientes
+    driver_pending_request: Optional["DriverInfo"] = Relationship(
+        back_populates="pending_request"
     )
 
 # Definir el listener para el evento after_update

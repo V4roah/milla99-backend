@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from .user import User
     from .vehicle_info import VehicleInfo
     from .driver_documents import DriverDocuments
+    from .client_request import ClientRequest
 
 
 class DriverInfoBase(SQLModel):
@@ -29,6 +30,23 @@ class DriverInfo(DriverInfoBase, table=True):
         back_populates="driver_info")
     documents: List["DriverDocuments"] = Relationship(
         back_populates="driver_info")
+
+    # Campos para gestión de solicitudes pendientes
+    pending_request_id: Optional[UUID] = Field(
+        default=None,
+        foreign_key="client_request.id",
+        description="ID de la solicitud pendiente aceptada por el conductor"
+    )
+    pending_request_accepted_at: Optional[datetime] = Field(
+        default=None,
+        description="Fecha y hora cuando el conductor aceptó la solicitud pendiente"
+    )
+
+    # Relación con la solicitud pendiente
+    pending_request: Optional["ClientRequest"] = Relationship(
+        back_populates="driver_pending_request"
+    )
+
     created_at: datetime = Field(default_factory=lambda: datetime.now(
         pytz.timezone("America/Bogota")), nullable=False)
     updated_at: datetime = Field(
@@ -49,3 +67,5 @@ class DriverInfoUpdate(SQLModel):
     birth_date: Optional[date] = None
     email: Optional[str] = None
     # selfie_url: Optional[str] = None  # Eliminado
+    pending_request_id: Optional[UUID] = None
+    pending_request_accepted_at: Optional[datetime] = None

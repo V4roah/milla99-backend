@@ -61,6 +61,11 @@ class User(UserBase, table=True):
         sa_relationship_kwargs={
             "foreign_keys": "[ClientRequest.id_driver_assigned]"}
     )
+    busy_driver_requests: List["ClientRequest"] = Relationship(
+        back_populates="assigned_busy_driver",
+        sa_relationship_kwargs={
+            "foreign_keys": "[ClientRequest.assigned_busy_driver_id]"}
+    )
     transactions: List["Transaction"] = Relationship(back_populates="user")
     driver_savings: List["DriverSavings"] = Relationship(back_populates="user")
     verify_mount: Optional["VerifyMount"] = Relationship(back_populates="user")
