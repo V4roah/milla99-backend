@@ -213,80 +213,6 @@ def get_eta(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/{client_request_id}", tags=["Passengers"], description="""
-Consulta el estado y la información detallada de una solicitud de viaje específica.
-
-**Permisos de Acceso:**
-- El cliente que creó la solicitud puede ver todos los detalles de su solicitud
-- El conductor asignado a la solicitud puede ver todos los detalles de la solicitud que le fue asignada
-- Otros usuarios no tienen acceso a esta información
-
-**Parámetros:**
-- `client_request_id`: ID de la solicitud de viaje.
-
-**Respuesta:**
-Incluye el detalle completo de la solicitud, incluyendo:
-- Información básica de la solicitud (estado, tarifas, ubicaciones)
-- Información del cliente (nombre, teléfono, calificación)
-- Información del conductor asignado (si existe)
-- Información del vehículo (si hay conductor asignado)
-- Método de pago seleccionado
-- Review del viaje (si existe)
-
-**Nota de Seguridad:**
-Este endpoint implementa validación de permisos para asegurar que solo el cliente dueño de la solicitud o el conductor asignado puedan acceder a la información.
-""")
-def get_client_request_detail(
-    request: Request,
-    client_request_id: UUID,
-    session: SessionDep
-):
-    """
-    Consulta el estado y la información detallada de una Client Request específica.
-    Solo permite acceso al cliente dueño de la solicitud o al conductor asignado.
-    """
-    user_id = request.state.user_id
-    return get_client_request_detail_service(session, client_request_id, user_id)
-
-
-@router.get("/distance", description="""
-Consulta la distancia y el tiempo estimado entre dos puntos usando Google Distance Matrix API.
-
-**Parámetros:**
-- `origin_lat`: Latitud de origen.
-- `origin_lng`: Longitud de origen.
-- `destination_lat`: Latitud de destino.
-- `destination_lng`: Longitud de destino.
-
-**Respuesta:**
-Devuelve la distancia y el tiempo estimado entre los puntos especificados.
-""")
-def get_time_and_distance(
-    origin_lat: float = Query(..., example=4.718136,
-                              description="Latitud de origen"),
-    origin_lng: float = Query(..., example=-74.07317,
-                              description="Longitud de origen"),
-    destination_lat: float = Query(..., example=4.702468,
-                                   description="Latitud de destino"),
-    destination_lng: float = Query(..., example=-
-                                   74.109776, description="Longitud de destino")
-):
-    """
-    Consulta la distancia y el tiempo estimado entre dos puntos usando Google Distance Matrix API.
-    Args:
-        origin_lat: Latitud de origen
-        origin_lng: Longitud de origen
-        destination_lat: Latitud de destino
-        destination_lng: Longitud de destino
-    Returns:
-        Respuesta JSON de Google Distance Matrix
-    """
-    try:
-        return get_time_and_distance_service(origin_lat, origin_lng, destination_lat, destination_lng)
-    except Exception as e:
-        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"message": str(e)})
-
-
 @router.get("/nearby", tags=["Drivers"], description="""
 Obtiene las solicitudes de viaje cercanas a un conductor en un radio de 5 km, filtrando por el tipo de servicio del vehículo del conductor.
 """)
@@ -383,6 +309,80 @@ async def get_nearby_client_requests(
         print(traceback.format_exc())
         raise HTTPException(
             status_code=500, detail=f"Error al buscar solicitudes cercanas: {str(e)}")
+
+
+@router.get("/{client_request_id}", tags=["Passengers"], description="""
+Consulta el estado y la información detallada de una solicitud de viaje específica.
+
+**Permisos de Acceso:**
+- El cliente que creó la solicitud puede ver todos los detalles de su solicitud
+- El conductor asignado a la solicitud puede ver todos los detalles de la solicitud que le fue asignada
+- Otros usuarios no tienen acceso a esta información
+
+**Parámetros:**
+- `client_request_id`: ID de la solicitud de viaje.
+
+**Respuesta:**
+Incluye el detalle completo de la solicitud, incluyendo:
+- Información básica de la solicitud (estado, tarifas, ubicaciones)
+- Información del cliente (nombre, teléfono, calificación)
+- Información del conductor asignado (si existe)
+- Información del vehículo (si hay conductor asignado)
+- Método de pago seleccionado
+- Review del viaje (si existe)
+
+**Nota de Seguridad:**
+Este endpoint implementa validación de permisos para asegurar que solo el cliente dueño de la solicitud o el conductor asignado puedan acceder a la información.
+""")
+def get_client_request_detail(
+    request: Request,
+    client_request_id: UUID,
+    session: SessionDep
+):
+    """
+    Consulta el estado y la información detallada de una Client Request específica.
+    Solo permite acceso al cliente dueño de la solicitud o al conductor asignado.
+    """
+    user_id = request.state.user_id
+    return get_client_request_detail_service(session, client_request_id, user_id)
+
+
+@router.get("/distance", description="""
+Consulta la distancia y el tiempo estimado entre dos puntos usando Google Distance Matrix API.
+
+**Parámetros:**
+- `origin_lat`: Latitud de origen.
+- `origin_lng`: Longitud de origen.
+- `destination_lat`: Latitud de destino.
+- `destination_lng`: Longitud de destino.
+
+**Respuesta:**
+Devuelve la distancia y el tiempo estimado entre los puntos especificados.
+""")
+def get_time_and_distance(
+    origin_lat: float = Query(..., example=4.718136,
+                              description="Latitud de origen"),
+    origin_lng: float = Query(..., example=-74.07317,
+                              description="Longitud de origen"),
+    destination_lat: float = Query(..., example=4.702468,
+                                   description="Latitud de destino"),
+    destination_lng: float = Query(..., example=-
+                                   74.109776, description="Longitud de destino")
+):
+    """
+    Consulta la distancia y el tiempo estimado entre dos puntos usando Google Distance Matrix API.
+    Args:
+        origin_lat: Latitud de origen
+        origin_lng: Longitud de origen
+        destination_lat: Latitud de destino
+        destination_lng: Longitud de destino
+    Returns:
+        Respuesta JSON de Google Distance Matrix
+    """
+    try:
+        return get_time_and_distance_service(origin_lat, origin_lng, destination_lat, destination_lng)
+    except Exception as e:
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"message": str(e)})
 
 
 @router.get("/by-status/{status}", tags=["Passengers"], description="""
@@ -515,23 +515,39 @@ def create_request(
         db_obj = create_client_request(
             session, request_data, id_client=user_id)
         # Lógica de asignación de conductores ocupados/disponibles usando el nuevo DriverSearchService
+        print(f"\n🔍 DEBUGGING: Buscando conductores óptimos...")
+        print(f"   - Client Lat: {request_data.pickup_lat}")
+        print(f"   - Client Lng: {request_data.pickup_lng}")
+        print(f"   - Type Service ID: {request_data.type_service_id}")
+
         optimal_drivers = find_optimal_drivers_with_search_service(
             session,
             request_data.pickup_lat,
             request_data.pickup_lng,
             request_data.type_service_id
         )
+
+        print(f"   - Conductores encontrados: {len(optimal_drivers)}")
+        for i, driver in enumerate(optimal_drivers):
+            print(
+                f"   - Driver {i+1}: {driver.get('type', 'unknown')} - {driver.get('user_id', 'unknown')}")
+
         assigned = False
         for driver in optimal_drivers:
             if driver["type"] == "available":
+                print(
+                    f"   ✅ Asignando conductor disponible: {driver.get('user_id')}")
                 assigned = True
                 break
         if not assigned:
+            print(f"   ⚠️ No hay conductores disponibles, buscando ocupados...")
             for driver in optimal_drivers:
                 if driver["type"] == "busy":
+                    print(
+                        f"   🔄 Asignando conductor ocupado: {driver.get('user_id')}")
                     estimated_pickup_time = datetime.now(
                     ) + timedelta(seconds=driver["estimated_time"])
-                    assign_busy_driver(
+                    success = assign_busy_driver(
                         session,
                         db_obj.id,
                         driver["user_id"],
@@ -539,8 +555,12 @@ def create_request(
                         driver["current_trip_remaining_time"],
                         driver["transit_time"]
                     )
+                    print(
+                        f"   - Resultado asignación: {'✅ Éxito' if success else '❌ Falló'}")
                     assigned = True
                     break
+            if not assigned:
+                print(f"   ❌ No se encontraron conductores disponibles ni ocupados")
         # Obtener el nombre del tipo de servicio
         from app.models.type_service import TypeService
         type_service = session.query(TypeService).filter(
