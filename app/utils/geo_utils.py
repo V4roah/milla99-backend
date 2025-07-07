@@ -51,3 +51,30 @@ def get_address_from_coords(lat: float, lng: float) -> Optional[str]:
     except Exception as e:
         print(f"Error inesperado en get_address_from_coords: {e}")
         return "Error al procesar dirección"
+
+
+def get_time_and_distance_from_google(origin_lat, origin_lng, destination_lat, destination_lng):
+    """
+    Llama a la API de Google Distance Matrix para obtener tiempo y distancia entre dos puntos.
+    Retorna una tupla (distancia_en_metros, duracion_en_segundos) o (None, None) si falla.
+    """
+    url = "https://maps.googleapis.com/maps/api/distancematrix/json"
+    params = {
+        "origins": f"{origin_lat},{origin_lng}",
+        "destinations": f"{destination_lat},{destination_lng}",
+        "units": "metric",
+        "key": settings.GOOGLE_API_KEY
+    }
+    try:
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+        data = response.json()
+        if data.get("status") == "OK" and data["rows"][0]["elements"][0]["status"] == "OK":
+            distance = data["rows"][0]["elements"][0]["distance"]["value"]
+            duration = data["rows"][0]["elements"][0]["duration"]["value"]
+            return distance, duration
+        else:
+            return None, None
+    except requests.exceptions.RequestException as e:
+        print(f"Error al llamar a Google Maps API: {e}")
+        return None, None

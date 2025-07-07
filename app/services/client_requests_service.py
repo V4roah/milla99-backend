@@ -30,6 +30,7 @@ from app.services.notification_service import NotificationService
 from app.services.driver_search_service import DriverSearchService
 import logging
 import pytz
+from app.services.config_service_value_service import ConfigServiceValueService
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ def get_time_and_distance_service(origin_lat, origin_lng, destination_lat, desti
     return data
 
 
-def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session, wkb_to_coords, type_service_ids=None):
+async def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session, wkb_to_coords, type_service_ids=None):
     print(
         f"\n[DEBUG] Calculando distancias para conductor en lat={driver_lat}, lng={driver_lng}")
     driver_point = func.ST_GeomFromText(
@@ -170,6 +171,7 @@ def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session,
         duration_trip = None
         distance_trip_text = None
         duration_trip_text = None
+        fair_price = None  # Precio justo a calcular
         if pickup_coords and destination_coords:
             url = "https://maps.googleapis.com/maps/api/distancematrix/json"
             params = {
@@ -189,6 +191,19 @@ def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session,
                         duration_trip = element["duration"]["value"]
                         distance_trip_text = element["distance"]["text"]
                         duration_trip_text = element["duration"]["text"]
+                        # Calcular el precio justo usando la configuración y Google Distance Matrix
+                        try:
+                            config_service = ConfigServiceValueService(session)
+                            # Comentario: Calcula el precio justo para el tipo de servicio de la solicitud
+                            fair_price_response = await config_service.calculate_total_value(
+                                cr.type_service_id, {"rows": [{"elements": [element]}],
+                                                     "destination_addresses": [destination_address],
+                                                     "origin_addresses": [pickup_address]}
+                            )
+                            if fair_price_response:
+                                fair_price = fair_price_response.recommended_value
+                        except Exception as e:
+                            print(f"[ERROR] No se pudo calcular el precio justo: {e}")
             except Exception as e:
                 print(
                     f"[ERROR] Google Distance Matrix (trayecto cliente): {e}")
@@ -199,6 +214,7 @@ def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session,
             "id": str(cr.id),
             "id_client": str(cr.id_client),
             "fare_offered": cr.fare_offered,
+            "fair_price": fair_price,  # Comentario: Se agrega el precio justo calculado
             "pickup_description": cr.pickup_description,
             "destination_description": cr.destination_description,
             "status": cr.status,

@@ -25,6 +25,7 @@ from app.models.driver_savings import DriverSavings, SavingsType
 from app.models.client_request import ClientRequest, StatusEnum
 from datetime import datetime
 import pytz
+from uuid import UUID
 
 COLOMBIA_TZ = pytz.timezone("America/Bogota")
 

@@ -15,35 +15,11 @@ from datetime import datetime
 from uuid import UUID
 import requests
 from app.core.config import settings
-from app.utils.geo_utils import wkb_to_coords
+from app.utils.geo_utils import wkb_to_coords, get_time_and_distance_from_google
 from app.services.notification_service import NotificationService
 import logging
 
 logger = logging.getLogger(__name__)
-
-
-def get_time_and_distance_from_google(origin_lat, origin_lng, destination_lat, destination_lng):
-    """Llama a la API de Google Distance Matrix para obtener tiempo y distancia."""
-    url = "https://maps.googleapis.com/maps/api/distancematrix/json"
-    params = {
-        "origins": f"{origin_lat},{origin_lng}",
-        "destinations": f"{destination_lat},{destination_lng}",
-        "units": "metric",
-        "key": settings.GOOGLE_API_KEY
-    }
-    try:
-        response = requests.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
-        if data.get("status") == "OK" and data["rows"][0]["elements"][0]["status"] == "OK":
-            distance = data["rows"][0]["elements"][0]["distance"]["value"]
-            duration = data["rows"][0]["elements"][0]["duration"]["value"]
-            return distance, duration
-        else:
-            return None, None
-    except requests.exceptions.RequestException as e:
-        print(f"Error al llamar a Google Maps API: {e}")
-        return None, None
 
 
 class DriverTripOfferService:

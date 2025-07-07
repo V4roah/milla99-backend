@@ -133,7 +133,7 @@ def get_time_and_distance(
 @router.get("/nearby", tags=["Drivers"], description="""
 Obtiene las solicitudes de viaje cercanas a un conductor en un radio de 5 km, filtrando por el tipo de servicio del vehículo del conductor.
 """)
-def get_nearby_client_requests(
+async def get_nearby_client_requests(
     request: Request,
     driver_lat: float = Query(..., example=4.708822,
                               description="Latitud del conductor"),
@@ -177,7 +177,7 @@ def get_nearby_client_requests(
                 status_code=400, detail="No hay servicios disponibles para el tipo de vehículo del conductor")
         type_service_ids = [ts.id for ts in type_services]
         # 4. Buscar las solicitudes cercanas filtrando por esos type_service_ids
-        results = get_nearby_client_requests_service(
+        results = await get_nearby_client_requests_service(
             driver_lat, driver_lng, session, wkb_to_coords, type_service_ids=type_service_ids
         )
         if not results:

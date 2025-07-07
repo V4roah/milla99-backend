@@ -827,7 +827,7 @@ def test_client_request_timeout():
 
 def test_nearby_requests_distance_filter():
     """
-    Verifica que el filtrado por distancia de las solicitudes cercanas funciona correctamente.
+    Verifica que el filtrado por distancia de las solicitudes cercanas funciona correctamente y que cada solicitud contiene el campo fair_price con un valor válido.
 
     Flujo del test:
     1. Crear múltiples solicitudes en diferentes ubicaciones:
@@ -839,6 +839,7 @@ def test_nearby_requests_distance_filter():
        - Solo aparecen las solicitudes dentro del radio configurado
        - Las solicitudes fuera del radio no aparecen
        - La distancia se calcula correctamente
+       - Cada solicitud retornada contiene el campo fair_price y su valor es None o un número positivo
     """
     print("\n=== INICIANDO TEST DE FILTRADO POR DISTANCIA ===")
 
@@ -1041,6 +1042,14 @@ def test_nearby_requests_distance_filter():
         f"Distancia de solicitud en mismo punto: {same_point_nearby['distance']} metros")
 
     print("\n=== TEST DE FILTRADO POR DISTANCIA COMPLETADO EXITOSAMENTE ===")
+
+    # Verificar que cada solicitud tiene el campo fair_price y que es válido
+    for req in nearby_data:
+        print("FAIR PRICE:", req["fair_price"])
+        assert "fair_price" in req, "No se encontró el campo fair_price en la respuesta de nearby"
+        # El precio justo debe ser None o un número positivo si se pudo calcular
+        assert req["fair_price"] is None or req[
+            "fair_price"] > 0, f"El fair_price no es válido: {req['fair_price']}"
 
 
 def test_nearby_requests_service_type_filter():

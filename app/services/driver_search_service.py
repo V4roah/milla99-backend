@@ -3,8 +3,8 @@ from typing import List, Dict, Optional, Tuple
 from app.models.driver_info import DriverInfo
 from app.models.client_request import ClientRequest, StatusEnum
 from app.models.project_settings import ProjectSettings
-from app.services.project_settings_service import ProjectSettingsService
-from app.utils.geo import calculate_distance, estimate_travel_time
+from app.services.config_service_value_service import ConfigServiceValueService
+from app.utils.geo_utils import get_time_and_distance_from_google
 from datetime import datetime, timedelta
 import pytz
 
@@ -14,7 +14,7 @@ COLOMBIA_TZ = pytz.timezone("America/Bogota")
 class DriverSearchService:
     def __init__(self, session: Session):
         self.session = session
-        self.project_settings_service = ProjectSettingsService(session)
+        self.config_service_value_service = ConfigServiceValueService(session)
 
     def find_available_drivers(
         self,
@@ -54,14 +54,17 @@ class DriverSearchService:
             drivers_with_distance = []
             for driver in drivers:
                 if driver.latitude and driver.longitude:
-                    distance = calculate_distance(
+                    distance = get_time_and_distance_from_google(
                         latitude, longitude,
                         driver.latitude, driver.longitude
-                    )
+                    )["distance"]
                     drivers_with_distance.append({
                         "driver": driver,
                         "distance": distance,
-                        "estimated_time": estimate_travel_time(distance)
+                        "estimated_time": get_time_and_distance_from_google(
+                            latitude, longitude,
+                            driver.latitude, driver.longitude
+                        )["estimated_time"]
                     })
 
             # Ordenar por distancia (más cercanos primero)
@@ -92,7 +95,7 @@ class DriverSearchService:
         """
         try:
             # Obtener el tiempo máximo configurado
-            max_time = self.project_settings_service.get_max_busy_driver_time()
+            max_time = self.config_service_value_service.get_max_busy_driver_time()
 
             # Buscar conductores ocupados con solicitudes pendientes
             query = select(DriverInfo).where(
@@ -119,14 +122,17 @@ class DriverSearchService:
 
                     # Validar que no exceda el tiempo máximo
                     if self.validate_max_time(total_time, max_time):
-                        distance = calculate_distance(
+                        distance = get_time_and_distance_from_google(
                             latitude, longitude,
                             driver.latitude, driver.longitude
-                        )
+                        )["distance"]
                         valid_busy_drivers.append({
                             "driver": driver,
                             "distance": distance,
-                            "estimated_time": estimate_travel_time(distance),
+                            "estimated_time": get_time_and_distance_from_google(
+                                latitude, longitude,
+                                driver.latitude, driver.longitude
+                            )["estimated_time"],
                             "total_time": total_time
                         })
 
@@ -158,7 +164,7 @@ class DriverSearchService:
         """
         try:
             # Obtener el tiempo máximo configurado
-            max_time = self.project_settings_service.get_max_busy_driver_time()
+            max_time = self.config_service_value_service.get_max_busy_driver_time()
 
             # Buscar conductores ocupados con solicitudes pendientes
             query = select(DriverInfo).where(
@@ -184,14 +190,17 @@ class DriverSearchService:
 
                     # Incluir solo los que exceden el tiempo máximo
                     if not self.validate_max_time(total_time, max_time):
-                        distance = calculate_distance(
+                        distance = get_time_and_distance_from_google(
                             latitude, longitude,
                             driver.latitude, driver.longitude
-                        )
+                        )["distance"]
                         invalid_busy_drivers.append({
                             "driver": driver,
                             "distance": distance,
-                            "estimated_time": estimate_travel_time(distance),
+                            "estimated_time": get_time_and_distance_from_google(
+                                latitude, longitude,
+                                driver.latitude, driver.longitude
+                            )["estimated_time"],
                             "total_time": total_time,
                             "exceeds_max_time": True
                         })
@@ -382,11 +391,14 @@ class DriverSearchService:
                 # Conductor transportando al cliente
                 # Calcular tiempo restante basado en distancia al destino
                 if active_trip.destination_latitude and active_trip.destination_longitude:
-                    distance_to_destination = calculate_distance(
+                    distance_to_destination = get_time_and_distance_from_google(
                         driver.latitude, driver.longitude,
                         active_trip.destination_latitude, active_trip.destination_longitude
-                    )
-                    return estimate_travel_time(distance_to_destination)
+                    )["distance"]
+                    return get_time_and_distance_from_google(
+                        driver.latitude, driver.longitude,
+                        active_trip.destination_latitude, active_trip.destination_longitude
+                    )["estimated_time"]
                 else:
                     return 10.0  # Estimación por defecto
 
@@ -418,13 +430,16 @@ class DriverSearchService:
                 return 0.0
 
             # Calcular distancia al nuevo cliente
-            distance = calculate_distance(
+            distance = get_time_and_distance_from_google(
                 driver.latitude, driver.longitude,
                 client_latitude, client_longitude
-            )
+            )["distance"]
 
             # Estimar tiempo de tránsito
-            transit_time = estimate_travel_time(distance)
+            transit_time = get_time_and_distance_from_google(
+                driver.latitude, driver.longitude,
+                client_latitude, client_longitude
+            )["estimated_time"]
 
             return transit_time
 
