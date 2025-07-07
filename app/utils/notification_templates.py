@@ -202,3 +202,62 @@ class NotificationTemplates:
                 "action": "view_offer"
             }
         }
+
+    # ===== NOTIFICACIONES PARA SOLICITUDES PENDIENTES =====
+
+    @staticmethod
+    def pending_request_assigned(request_id: UUID, pickup_address: str, destination_address: str, estimated_wait_time: int) -> Dict[str, Any]:
+        """Notificación cuando se asigna una solicitud pendiente al conductor."""
+        return {
+            "title": "¡Solicitud pendiente asignada!",
+            "body": f"Viaje de {pickup_address} a {destination_address}. Disponible en ~{estimated_wait_time} min",
+            "data": {
+                "type": "pending_request_assigned",
+                "request_id": str(request_id),
+                "action": "view_pending_request"
+            }
+        }
+
+    @staticmethod
+    def pending_request_status_change(request_id: UUID, new_status: str, status_description: str) -> Dict[str, Any]:
+        """Notificación cuando cambia el estado de una solicitud pendiente."""
+        return {
+            "title": f"Solicitud pendiente: {new_status}",
+            "body": status_description,
+            "data": {
+                "type": "pending_request_status_change",
+                "request_id": str(request_id),
+                "new_status": new_status,
+                "action": "view_pending_request"
+            }
+        }
+
+    @staticmethod
+    def pending_request_available(request_id: UUID, pickup_address: str, destination_address: str) -> Dict[str, Any]:
+        """Notificación cuando una solicitud pendiente está disponible para aceptar."""
+        return {
+            "title": "¡Solicitud pendiente disponible!",
+            "body": f"Tu solicitud de {pickup_address} a {destination_address} está lista para aceptar",
+            "data": {
+                "type": "pending_request_available",
+                "request_id": str(request_id),
+                "action": "accept_pending_request"
+            }
+        }
+
+    @staticmethod
+    def pending_request_cancelled(request_id: UUID, reason: Optional[str] = None) -> Dict[str, Any]:
+        """Notificación cuando se cancela una solicitud pendiente."""
+        message = "Tu solicitud pendiente ha sido cancelada"
+        if reason:
+            message += f": {reason}"
+
+        return {
+            "title": "Solicitud pendiente cancelada",
+            "body": message,
+            "data": {
+                "type": "pending_request_cancelled",
+                "request_id": str(request_id),
+                "action": "find_new_trip"
+            }
+        }

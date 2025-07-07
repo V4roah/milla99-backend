@@ -440,3 +440,127 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Error enviando notificación personalizada: {e}")
             return {"success": 0, "failed": 0, "error": str(e)}
+
+    # ===== MÉTODOS DE NOTIFICACIONES PARA SOLICITUDES PENDIENTES =====
+
+    def notificar_solicitud_pendiente(self, request_id: UUID, driver_id: UUID, estimated_wait_time: int) -> Dict[str, Any]:
+        """
+        Notifica al conductor cuando se le asigna una solicitud pendiente.
+
+        Args:
+            request_id: ID de la solicitud pendiente
+            driver_id: ID del conductor
+            estimated_wait_time: Tiempo estimado de espera en minutos
+
+        Returns:
+            Resultado del envío
+        """
+        try:
+            # Obtener información de la solicitud
+            client_request = self.session.get(ClientRequest, request_id)
+            if not client_request:
+                logger.error(f"Solicitud {request_id} no encontrada")
+                return {"success": 0, "failed": 0, "error": "Request not found"}
+
+            # Crear notificación
+            notification = NotificationTemplates.pending_request_assigned(
+                request_id=request_id,
+                pickup_address=client_request.pickup_description or "Punto de recogida",
+                destination_address=client_request.destination_description or "Destino",
+                estimated_wait_time=estimated_wait_time
+            )
+
+            # Enviar notificación al conductor
+            return self._send_notification(driver_id, notification)
+
+        except Exception as e:
+            logger.error(f"Error notificando solicitud pendiente: {e}")
+            return {"success": 0, "failed": 0, "error": str(e)}
+
+    def notificar_cambio_estado_pendiente(self, request_id: UUID, driver_id: UUID, new_status: str, status_description: str) -> Dict[str, Any]:
+        """
+        Notifica al conductor cuando cambia el estado de su solicitud pendiente.
+
+        Args:
+            request_id: ID de la solicitud pendiente
+            driver_id: ID del conductor
+            new_status: Nuevo estado de la solicitud
+            status_description: Descripción del cambio de estado
+
+        Returns:
+            Resultado del envío
+        """
+        try:
+            # Crear notificación
+            notification = NotificationTemplates.pending_request_status_change(
+                request_id=request_id,
+                new_status=new_status,
+                status_description=status_description
+            )
+
+            # Enviar notificación al conductor
+            return self._send_notification(driver_id, notification)
+
+        except Exception as e:
+            logger.error(f"Error notificando cambio de estado pendiente: {e}")
+            return {"success": 0, "failed": 0, "error": str(e)}
+
+    def notificar_solicitud_pendiente_disponible(self, request_id: UUID, driver_id: UUID) -> Dict[str, Any]:
+        """
+        Notifica al conductor cuando su solicitud pendiente está disponible para aceptar.
+
+        Args:
+            request_id: ID de la solicitud pendiente
+            driver_id: ID del conductor
+
+        Returns:
+            Resultado del envío
+        """
+        try:
+            # Obtener información de la solicitud
+            client_request = self.session.get(ClientRequest, request_id)
+            if not client_request:
+                logger.error(f"Solicitud {request_id} no encontrada")
+                return {"success": 0, "failed": 0, "error": "Request not found"}
+
+            # Crear notificación
+            notification = NotificationTemplates.pending_request_available(
+                request_id=request_id,
+                pickup_address=client_request.pickup_description or "Punto de recogida",
+                destination_address=client_request.destination_description or "Destino"
+            )
+
+            # Enviar notificación al conductor
+            return self._send_notification(driver_id, notification)
+
+        except Exception as e:
+            logger.error(
+                f"Error notificando solicitud pendiente disponible: {e}")
+            return {"success": 0, "failed": 0, "error": str(e)}
+
+    def notificar_solicitud_pendiente_cancelada(self, request_id: UUID, driver_id: UUID, reason: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Notifica al conductor cuando se cancela su solicitud pendiente.
+
+        Args:
+            request_id: ID de la solicitud pendiente
+            driver_id: ID del conductor
+            reason: Razón de la cancelación
+
+        Returns:
+            Resultado del envío
+        """
+        try:
+            # Crear notificación
+            notification = NotificationTemplates.pending_request_cancelled(
+                request_id=request_id,
+                reason=reason
+            )
+
+            # Enviar notificación al conductor
+            return self._send_notification(driver_id, notification)
+
+        except Exception as e:
+            logger.error(
+                f"Error notificando cancelación de solicitud pendiente: {e}")
+            return {"success": 0, "failed": 0, "error": str(e)}
