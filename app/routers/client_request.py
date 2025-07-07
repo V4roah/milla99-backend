@@ -21,7 +21,9 @@ from app.services.client_requests_service import (
     update_status_by_driver_service,
     client_canceled_service,
     update_review_service,
-    get_driver_requests_by_status_service
+    get_driver_requests_by_status_service,
+    find_optimal_drivers,
+    assign_busy_driver
 )
 from sqlalchemy.orm import Session
 import traceback
@@ -30,7 +32,7 @@ from app.models.user_has_roles import UserHasRole, RoleStatus
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi import Security
 from app.utils.geo_utils import wkb_to_coords
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.utils.geo import wkb_to_coords
 from uuid import UUID
 from app.core.dependencies.auth import get_current_user
@@ -354,6 +356,33 @@ def create_request(
             )
         db_obj = create_client_request(
             session, request_data, id_client=user_id)
+        # Lógica de asignación de conductores ocupados/disponibles (no afecta el response)
+        optimal_drivers = find_optimal_drivers(
+            session,
+            request_data.pickup_lat,
+            request_data.pickup_lng,
+            request_data.type_service_id
+        )
+        assigned = False
+        for driver in optimal_drivers:
+            if driver["type"] == "available":
+                assigned = True
+                break
+        if not assigned:
+            for driver in optimal_drivers:
+                if driver["type"] == "busy":
+                    estimated_pickup_time = datetime.now(
+                    ) + timedelta(seconds=driver["estimated_time"])
+                    assign_busy_driver(
+                        session,
+                        db_obj.id,
+                        driver["user_id"],
+                        estimated_pickup_time,
+                        driver["current_trip_remaining_time"],
+                        driver["transit_time"]
+                    )
+                    assigned = True
+                    break
         # Obtener el nombre del tipo de servicio
         from app.models.type_service import TypeService
         type_service = session.query(TypeService).filter(

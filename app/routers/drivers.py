@@ -7,6 +7,7 @@ from sqlalchemy import select
 import traceback
 import os
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from uuid import UUID
 
 from app.models.driver import DriverCreate, DriverDocumentsInput, DriverFullCreate, DriverFullRead
 from app.core.db import get_session
@@ -460,3 +461,216 @@ def get_driver_me(
     # Usar el servicio existente para obtener el detalle completo
     service = DriverService(session)
     return service.get_driver_detail_service(session, driver_id)
+
+
+@router.post("/pending-request/accept", status_code=status.HTTP_200_OK, description="""
+Acepta una solicitud pendiente del conductor.
+
+**Parámetros:**
+- `client_request_id`: ID de la solicitud del cliente a aceptar (UUID).
+
+**Respuesta:**
+Devuelve un mensaje de confirmación si la solicitud se aceptó correctamente.
+""")
+async def accept_pending_request(
+    client_request_id: UUID,
+    request: Request,
+    session: Session = Depends(get_session),
+    current_user=Depends(get_current_user)
+):
+    """
+    Acepta una solicitud pendiente del conductor.
+
+    Args:
+        client_request_id: ID de la solicitud del cliente a aceptar (UUID)
+        request: Request object para obtener el user_id del token
+        session: Sesión de base de datos
+        current_user: Usuario autenticado
+    """
+    try:
+        # Obtener el user_id desde el token
+        user_id = request.state.user_id
+
+        # Buscar el driver_info correspondiente a este usuario
+        driver_info = session.exec(select(DriverInfo).where(
+            DriverInfo.user_id == user_id)).scalars().first()
+        if not driver_info:
+            raise HTTPException(
+                status_code=404, detail="No se encontró información de conductor para este usuario.")
+
+        driver_id = driver_info.id
+
+        # Usar el servicio para aceptar la solicitud pendiente
+        service = DriverService(session)
+        success = service.accept_pending_request(driver_id, client_request_id)
+
+        if success:
+            return {"message": "Solicitud pendiente aceptada correctamente"}
+        else:
+            raise HTTPException(
+                status_code=400, detail="No se pudo aceptar la solicitud pendiente")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error aceptando solicitud pendiente: {e}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error interno del servidor: {str(e)}"
+        )
+
+
+@router.post("/pending-request/complete", status_code=status.HTTP_200_OK, description="""
+Completa una solicitud pendiente del conductor (marca como completada).
+
+**Respuesta:**
+Devuelve un mensaje de confirmación si la solicitud se completó correctamente.
+""")
+async def complete_pending_request(
+    request: Request,
+    session: Session = Depends(get_session),
+    current_user=Depends(get_current_user)
+):
+    """
+    Completa una solicitud pendiente del conductor.
+
+    Args:
+        request: Request object para obtener el user_id del token
+        session: Sesión de base de datos
+        current_user: Usuario autenticado
+    """
+    try:
+        # Obtener el user_id desde el token
+        user_id = request.state.user_id
+
+        # Buscar el driver_info correspondiente a este usuario
+        driver_info = session.exec(select(DriverInfo).where(
+            DriverInfo.user_id == user_id)).scalars().first()
+        if not driver_info:
+            raise HTTPException(
+                status_code=404, detail="No se encontró información de conductor para este usuario.")
+
+        driver_id = driver_info.id
+
+        # Usar el servicio para completar la solicitud pendiente
+        service = DriverService(session)
+        success = service.complete_pending_request(driver_id)
+
+        if success:
+            return {"message": "Solicitud pendiente completada correctamente"}
+        else:
+            raise HTTPException(
+                status_code=400, detail="No se pudo completar la solicitud pendiente")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error completando solicitud pendiente: {e}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error interno del servidor: {str(e)}"
+        )
+
+
+@router.post("/pending-request/cancel", status_code=status.HTTP_200_OK, description="""
+Cancela una solicitud pendiente del conductor.
+
+**Respuesta:**
+Devuelve un mensaje de confirmación si la solicitud se canceló correctamente.
+""")
+async def cancel_pending_request(
+    request: Request,
+    session: Session = Depends(get_session),
+    current_user=Depends(get_current_user)
+):
+    """
+    Cancela una solicitud pendiente del conductor.
+
+    Args:
+        request: Request object para obtener el user_id del token
+        session: Sesión de base de datos
+        current_user: Usuario autenticado
+    """
+    try:
+        # Obtener el user_id desde el token
+        user_id = request.state.user_id
+
+        # Buscar el driver_info correspondiente a este usuario
+        driver_info = session.exec(select(DriverInfo).where(
+            DriverInfo.user_id == user_id)).scalars().first()
+        if not driver_info:
+            raise HTTPException(
+                status_code=404, detail="No se encontró información de conductor para este usuario.")
+
+        driver_id = driver_info.id
+
+        # Usar el servicio para cancelar la solicitud pendiente
+        service = DriverService(session)
+        success = service.cancel_pending_request(driver_id)
+
+        if success:
+            return {"message": "Solicitud pendiente cancelada correctamente"}
+        else:
+            raise HTTPException(
+                status_code=400, detail="No se pudo cancelar la solicitud pendiente")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error cancelando solicitud pendiente: {e}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error interno del servidor: {str(e)}"
+        )
+
+
+@router.get("/pending-request", description="""
+Obtiene la información de la solicitud pendiente del conductor.
+
+**Respuesta:**
+Devuelve la información de la solicitud pendiente si existe, o null si no hay solicitud pendiente.
+""")
+async def get_pending_request(
+    request: Request,
+    session: Session = Depends(get_session),
+    current_user=Depends(get_current_user)
+):
+    """
+    Obtiene la información de la solicitud pendiente del conductor.
+
+    Args:
+        request: Request object para obtener el user_id del token
+        session: Sesión de base de datos
+        current_user: Usuario autenticado
+    """
+    try:
+        # Obtener el user_id desde el token
+        user_id = request.state.user_id
+
+        # Buscar el driver_info correspondiente a este usuario
+        driver_info = session.exec(select(DriverInfo).where(
+            DriverInfo.user_id == user_id)).scalars().first()
+        if not driver_info:
+            raise HTTPException(
+                status_code=404, detail="No se encontró información de conductor para este usuario.")
+
+        driver_id = driver_info.id
+
+        # Usar el servicio para obtener la solicitud pendiente
+        service = DriverService(session)
+        pending_request = service.get_driver_pending_request(driver_id)
+
+        return {"pending_request": pending_request}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error obteniendo solicitud pendiente: {e}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error interno del servidor: {str(e)}"
+        )
