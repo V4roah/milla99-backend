@@ -2099,3 +2099,97 @@ def test_nearby_requests_with_addresses():
                ) < 0.001, f"Longitud de destino no coincide: {dest_lng}"
 
     print("\n=== TEST DE DIRECCIONES EN NEARBY COMPLETADO EXITOSAMENTE ===")
+
+
+def test_eta_endpoint_simple():
+    """
+    Prueba básica del endpoint /eta:
+    - Crea una solicitud de cliente
+    - Crea y aprueba un conductor
+    - Asigna el conductor a la solicitud
+    - Actualiza la ubicación del conductor
+    - Llama al endpoint /eta y verifica que retorne distance y duration válidos
+    """
+    import traceback
+    try:
+        # 1. Crear cliente y solicitud
+        phone_number = "3004444458"
+        country_code = "+57"
+        send_resp = client.post(
+            f"/auth/verify/{country_code}/{phone_number}/send")
+        assert send_resp.status_code == 201
+        code = send_resp.json()["message"].split()[-1]
+        verify_resp = client.post(
+            f"/auth/verify/{country_code}/{phone_number}/code",
+            json={"code": code}
+        )
+        assert verify_resp.status_code == 200
+        token = verify_resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        request_data = {
+            "fare_offered": 20000,
+            "pickup_description": "Suba Bogotá",
+            "destination_description": "Santa Rosita Engativa",
+            "pickup_lat": 4.718136,
+            "pickup_lng": -74.073170,
+            "destination_lat": 4.702468,
+            "destination_lng": -74.109776,
+            "type_service_id": 1,
+            "payment_method_id": 1
+        }
+        create_resp = client.post(
+            "/client-request/", json=request_data, headers=headers)
+        assert create_resp.status_code == 201
+        client_request_id = create_resp.json()["id"]
+
+        # 2. Crear y aprobar conductor
+        driver_phone = "3010000007"
+        driver_country_code = "+57"
+        driver_token, driver_id = create_and_approve_driver(
+            client, driver_phone, driver_country_code)
+        driver_headers = {"Authorization": f"Bearer {driver_token}"}
+
+        # 3. Asignar el conductor a la solicitud
+        assign_data = {
+            "id_client_request": client_request_id,
+            "id_driver": driver_id,
+            "fare_assigned": 25000
+        }
+        assign_resp = client.patch(
+            "/client-request/updateDriverAssigned", json=assign_data, headers=headers)
+        assert assign_resp.status_code == 200
+        assert assign_resp.json()["success"] is True
+
+        # 4. Actualizar la ubicación actual del conductor en la base de datos
+        from app.core.db import engine
+        from sqlmodel import Session
+        from app.models.driver_position import DriverPosition
+        from geoalchemy2.shape import from_shape
+        from shapely.geometry import Point
+        from uuid import UUID
+        with Session(engine) as db:
+            point = from_shape(Point(-74.075000, 4.720000), srid=4326)
+            driver_position = DriverPosition(
+                id_driver=UUID(driver_id), position=point)
+            db.add(driver_position)
+            db.commit()
+
+        # 5. Llamar al endpoint ETA
+        eta_resp = client.get(
+            f"/client-request/eta?client_request_id={client_request_id}", headers=headers)
+        assert eta_resp.status_code == 200
+        data = eta_resp.json()
+        assert "distance" in data and "duration" in data
+        assert isinstance(data["distance"], (int, float)
+                          ) and data["distance"] > 0
+        assert isinstance(data["duration"], (int, float)
+                          ) and data["duration"] > 0
+        print(f"✅ ETA calculado correctamente: {data}")
+    except Exception as e:
+        print(f"\n❌ ERROR EN TEST ETA ENDPOINT SIMPLE:")
+        print(f"Tipo de error: {type(e).__name__}")
+        print(f"Mensaje: {str(e)}")
+        print("=== TRACEBACK COMPLETO ===")
+        traceback.print_exc()
+        print("=== FIN TRACEBACK ===")
+        raise

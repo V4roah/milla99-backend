@@ -19,7 +19,7 @@ from app.models.vehicle_info import VehicleInfo
 from app.services.driver_trip_offer_service import get_average_rating
 from sqlalchemy.orm import selectinload
 import traceback
-from app.utils.geo_utils import wkb_to_coords, get_address_from_coords
+from app.utils.geo_utils import wkb_to_coords, get_address_from_coords, get_time_and_distance_from_google
 from app.models.type_service import TypeService
 from uuid import UUID
 from typing import Dict, Set, Optional, List
@@ -203,7 +203,8 @@ async def get_nearby_client_requests_service(driver_lat, driver_lng, session: Se
                             if fair_price_response:
                                 fair_price = fair_price_response.recommended_value
                         except Exception as e:
-                            print(f"[ERROR] No se pudo calcular el precio justo: {e}")
+                            print(
+                                f"[ERROR] No se pudo calcular el precio justo: {e}")
             except Exception as e:
                 print(
                     f"[ERROR] Google Distance Matrix (trayecto cliente): {e}")
@@ -214,7 +215,7 @@ async def get_nearby_client_requests_service(driver_lat, driver_lng, session: Se
             "id": str(cr.id),
             "id_client": str(cr.id_client),
             "fare_offered": cr.fare_offered,
-            "fair_price": fair_price,  # Comentario: Se agrega el precio justo calculado
+            "fair_price": int(fair_price) if fair_price is not None else None, 
             "pickup_description": cr.pickup_description,
             "destination_description": cr.destination_description,
             "status": cr.status,
@@ -2105,3 +2106,95 @@ def assign_busy_driver(
         logger.error(f"Error assigning busy driver: {e}")
         session.rollback()
         return False
+
+
+def get_eta_service(session, client_request_id):
+    """
+    Calcula el ETA (tiempo estimado de llegada) del conductor al punto de recogida usando Google Distance Matrix.
+    """
+    import traceback
+    try:
+        from app.models.client_request import ClientRequest
+        from app.models.driver_info import DriverInfo
+        from app.utils.geo_utils import wkb_to_coords, get_time_and_distance_from_google
+
+        # Buscar la solicitud
+        client_request = session.query(ClientRequest).filter(
+            ClientRequest.id == client_request_id).first()
+        if not client_request:
+            raise Exception("Solicitud no encontrada")
+        if not client_request.id_driver_assigned:
+            raise Exception("No hay conductor asignado a esta solicitud")
+
+        # Buscar la ubicación actual del conductor
+        driver_info = session.query(DriverInfo).filter(
+            DriverInfo.user_id == client_request.id_driver_assigned).first()
+        if not driver_info:
+            raise Exception("No se encontró información del conductor")
+
+        # Verificar si tiene campos de ubicación
+        if hasattr(driver_info, 'current_lat') and hasattr(driver_info, 'current_lng'):
+            if not getattr(driver_info, 'current_lat', None) or not getattr(driver_info, 'current_lng', None):
+                raise Exception(
+                    "No se encontró la ubicación actual del conductor")
+            else:
+                driver_lat = driver_info.current_lat
+                driver_lng = driver_info.current_lng
+        else:
+            # Buscar en DriverPosition
+            from app.models.driver_position import DriverPosition
+            from geoalchemy2.shape import to_shape
+            driver_position = session.query(DriverPosition).filter(
+                DriverPosition.id_driver == client_request.id_driver_assigned).first()
+            if not driver_position:
+                raise Exception(
+                    "No se encontró la ubicación actual del conductor en DriverPosition")
+            point = to_shape(driver_position.position)
+            driver_lat = point.y
+            driver_lng = point.x
+
+        # Obtener coordenadas de recogida
+        pickup_coords = None
+        if client_request.pickup_position:
+            pickup_coords = wkb_to_coords(client_request.pickup_position)
+        if not pickup_coords:
+            raise Exception("No se encontró la ubicación de recogida")
+
+        # Llamar a la utilidad de Google
+        distance, duration = get_time_and_distance_from_google(
+            driver_lat, driver_lng,
+            pickup_coords["lat"], pickup_coords["lng"]
+        )
+        if distance is None or duration is None:
+            raise Exception(
+                "No se pudo obtener el tiempo y distancia desde Google API")
+
+        result = {"distance": distance, "duration": duration}
+        # Emitir actualización por WebSocket si está disponible
+        try:
+            from app.core.sio_events import sio
+            import asyncio
+
+            async def emit_eta_update():
+                await sio.emit(
+                    f'eta_update/{client_request_id}',
+                    {
+                        'distance': distance,
+                        'duration': duration,
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+                )
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(emit_eta_update())
+                else:
+                    loop.run_until_complete(emit_eta_update())
+            except RuntimeError:
+                asyncio.run(emit_eta_update())
+        except Exception:
+            pass
+        return result
+    except Exception as e:
+        traceback.print_exc()
+        raise

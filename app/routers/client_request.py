@@ -24,7 +24,8 @@ from app.services.client_requests_service import (
     get_driver_requests_by_status_service,
     find_optimal_drivers,
     find_optimal_drivers_with_search_service,
-    assign_busy_driver
+    assign_busy_driver,
+    get_eta_service
 )
 from sqlalchemy.orm import Session
 import traceback
@@ -32,7 +33,7 @@ from pydantic import BaseModel, Field
 from app.models.user_has_roles import UserHasRole, RoleStatus
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi import Security
-from app.utils.geo_utils import wkb_to_coords
+from app.utils.geo_utils import wkb_to_coords, get_time_and_distance_from_google
 from datetime import datetime, timedelta
 from app.utils.geo import wkb_to_coords
 from uuid import UUID
@@ -90,6 +91,162 @@ class DriverCancelRequest(BaseModel):
                                     description="ID de la solicitud de viaje a cancelar")
     reason: str | None = Field(
         None, description="Razón de la cancelación (opcional)")
+
+
+class ETAResponse(BaseModel):
+    distance: float
+    duration: float
+
+
+@router.post("/eta/start-tracking", tags=["Passengers", "Drivers"], description="""
+Inicia el seguimiento en tiempo real del ETA (tiempo estimado de llegada) del conductor.
+Este endpoint configura las actualizaciones automáticas por WebSocket.
+
+**Parámetros:**
+- `client_request_id`: ID de la solicitud de viaje.
+
+**Respuesta:**
+- `success`: True si el seguimiento se inició correctamente.
+- `message`: Mensaje descriptivo.
+- `socket_event`: Nombre del evento WebSocket a escuchar.
+
+**Nota:** El cliente debe conectarse al WebSocket y escuchar el evento `eta_update/{client_request_id}`.
+""")
+def start_eta_tracking(
+    client_request_id: UUID = Body(...,
+                                   description="ID de la solicitud de viaje"),
+    session: Session = Depends(get_session)
+):
+    """
+    Inicia el seguimiento en tiempo real del ETA del conductor.
+    """
+    import traceback
+
+    try:
+        print(
+            f"🔍 DEBUG ETA TRACKING: Iniciando seguimiento para client_request_id: {client_request_id}")
+
+        # Verificar que la solicitud existe y tiene conductor asignado
+        from app.models.client_request import ClientRequest
+
+        client_request = session.query(ClientRequest).filter(
+            ClientRequest.id == client_request_id).first()
+
+        if not client_request:
+            raise HTTPException(
+                status_code=404, detail="Solicitud no encontrada")
+
+        if not client_request.id_driver_assigned:
+            raise HTTPException(
+                status_code=400, detail="No hay conductor asignado a esta solicitud")
+
+        print(
+            f"✅ DEBUG ETA TRACKING: Seguimiento iniciado para solicitud {client_request_id}")
+
+        return {
+            "success": True,
+            "message": "Seguimiento de ETA iniciado correctamente",
+            "socket_event": f"eta_update/{client_request_id}",
+            "instructions": {
+                "connect_websocket": "Conectarse a ws://localhost:8000/ws",
+                "listen_event": f"Escuchar evento: eta_update/{client_request_id}",
+                "data_format": {
+                    "distance": "Distancia en metros",
+                    "duration": "Tiempo en segundos",
+                    "timestamp": "Timestamp de la actualización"
+                }
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ ERROR en start_eta_tracking:")
+        print(f"Tipo de error: {type(e).__name__}")
+        print(f"Mensaje: {str(e)}")
+        print("=== TRACEBACK COMPLETO ===")
+        traceback.print_exc()
+        print("=== FIN TRACEBACK ===")
+        raise HTTPException(
+            status_code=500, detail=f"Error iniciando seguimiento: {str(e)}")
+
+
+@router.get("/eta", response_model=ETAResponse, tags=["Passengers", "Drivers"], description="""
+Devuelve el tiempo y la distancia estimados para que el conductor asignado llegue al punto de recogida del pasajero usando Google Distance Matrix.
+
+**Parámetros:**
+- `client_request_id`: ID de la solicitud de viaje.
+
+**Respuesta:**
+- `distance`: Distancia estimada en metros.
+- `duration`: Tiempo estimado en segundos.
+""")
+def get_eta(
+    client_request_id: UUID = Query(...,
+                                    description="ID de la solicitud de viaje"),
+    session: Session = Depends(get_session)
+):
+    """
+    Calcula el ETA (tiempo estimado de llegada) del conductor al punto de recogida usando Google Distance Matrix.
+    """
+    import traceback
+
+    try:
+        print(
+            f"🔍 DEBUG ETA: Iniciando cálculo ETA para client_request_id: {client_request_id}")
+        print(f"🔍 DEBUG ETA: Tipo de session: {type(session)}")
+
+        result = get_eta_service(session, client_request_id)
+        print(f"✅ DEBUG ETA: Resultado del servicio: {result}")
+
+        response = ETAResponse(**result)
+        print(f"✅ DEBUG ETA: Respuesta final: {response}")
+        return response
+
+    except Exception as e:
+        print(f"❌ ERROR en get_eta:")
+        print(f"Tipo de error: {type(e).__name__}")
+        print(f"Mensaje: {str(e)}")
+        print("=== TRACEBACK COMPLETO ===")
+        traceback.print_exc()
+        print("=== FIN TRACEBACK ===")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{client_request_id}", tags=["Passengers"], description="""
+Consulta el estado y la información detallada de una solicitud de viaje específica.
+
+**Permisos de Acceso:**
+- El cliente que creó la solicitud puede ver todos los detalles de su solicitud
+- El conductor asignado a la solicitud puede ver todos los detalles de la solicitud que le fue asignada
+- Otros usuarios no tienen acceso a esta información
+
+**Parámetros:**
+- `client_request_id`: ID de la solicitud de viaje.
+
+**Respuesta:**
+Incluye el detalle completo de la solicitud, incluyendo:
+- Información básica de la solicitud (estado, tarifas, ubicaciones)
+- Información del cliente (nombre, teléfono, calificación)
+- Información del conductor asignado (si existe)
+- Información del vehículo (si hay conductor asignado)
+- Método de pago seleccionado
+- Review del viaje (si existe)
+
+**Nota de Seguridad:**
+Este endpoint implementa validación de permisos para asegurar que solo el cliente dueño de la solicitud o el conductor asignado puedan acceder a la información.
+""")
+def get_client_request_detail(
+    request: Request,
+    client_request_id: UUID,
+    session: SessionDep
+):
+    """
+    Consulta el estado y la información detallada de una Client Request específica.
+    Solo permite acceso al cliente dueño de la solicitud o al conductor asignado.
+    """
+    user_id = request.state.user_id
+    return get_client_request_detail_service(session, client_request_id, user_id)
 
 
 @router.get("/distance", description="""
@@ -676,42 +833,6 @@ def check_driver_suspension_api(
         print(f"[ERROR] Exception en check_driver_suspension: {str(e)}")
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/{client_request_id}", tags=["Passengers"], description="""
-Consulta el estado y la información detallada de una solicitud de viaje específica.
-
-**Permisos de Acceso:**
-- El cliente que creó la solicitud puede ver todos los detalles de su solicitud
-- El conductor asignado a la solicitud puede ver todos los detalles de la solicitud que le fue asignada
-- Otros usuarios no tienen acceso a esta información
-
-**Parámetros:**
-- `client_request_id`: ID de la solicitud de viaje.
-
-**Respuesta:**
-Incluye el detalle completo de la solicitud, incluyendo:
-- Información básica de la solicitud (estado, tarifas, ubicaciones)
-- Información del cliente (nombre, teléfono, calificación)
-- Información del conductor asignado (si existe)
-- Información del vehículo (si hay conductor asignado)
-- Método de pago seleccionado
-- Review del viaje (si existe)
-
-**Nota de Seguridad:**
-Este endpoint implementa validación de permisos para asegurar que solo el cliente dueño de la solicitud o el conductor asignado puedan acceder a la información.
-""")
-def get_client_request_detail(
-    request: Request,
-    client_request_id: UUID,
-    session: SessionDep
-):
-    """
-    Consulta el estado y la información detallada de una Client Request específica.
-    Solo permite acceso al cliente dueño de la solicitud o al conductor asignado.
-    """
-    user_id = request.state.user_id
-    return get_client_request_detail_service(session, client_request_id, user_id)
 
 
 @router.patch("/updateStatusByDriver", tags=["Drivers"], description="""

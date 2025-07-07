@@ -325,3 +325,41 @@ async def driver_to_client_message(sid, data):
                 'error': 'Error al guardar mensaje'
             }
         )
+
+
+@sio.event
+async def update_eta(sid, data):
+    """
+    Actualiza el ETA (tiempo estimado de llegada) en tiempo real.
+    - Evento: update_eta
+    - El cliente debe escuchar: eta_update/{id_client_request} (reemplaza {id_client_request} por el ID real de la solicitud)
+    - JSON de ejemplo para enviar:
+        {
+            "id_client_request": "uuid-de-la-solicitud",
+            "driver_id": "uuid-del-conductor",
+            "distance": 1830,
+            "duration": 368
+        }
+    - El cliente recibe:
+        {
+            "id_socket": "g4FrvjlHyMEWc71EAAAB",
+            "distance": 1830,
+            "duration": 368,
+            "timestamp": "2025-06-06T16:10:43.170016"
+        }
+    """
+    # Si data es string, conviértelo a dict
+    if isinstance(data, str):
+        data = json.loads(data)
+    print(f'Actualización de ETA: {sid}: {data}')
+
+    # Emitir actualización de ETA al cliente específico
+    await sio.emit(
+        f'eta_update/{data["id_client_request"]}',
+        {
+            'id_socket': sid,
+            'distance': data['distance'],
+            'duration': data['duration'],
+            'timestamp': datetime.utcnow().isoformat()
+        }
+    )
