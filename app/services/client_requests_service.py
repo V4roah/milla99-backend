@@ -22,7 +22,7 @@ import traceback
 from app.utils.geo_utils import wkb_to_coords, get_address_from_coords
 from app.models.type_service import TypeService
 from uuid import UUID
-from typing import Dict, Set, Optional
+from typing import Dict, Set, Optional, List
 from app.models.payment_method import PaymentMethod
 from app.services.transaction_service import TransactionService
 from app.models.transaction import TransactionType
@@ -1596,3 +1596,401 @@ def check_and_lift_driver_suspension(session: Session, driver_id: UUID):
             "remaining_days": remaining_days,
             "remaining_hours": remaining_hours
         }
+
+
+def get_busy_driver_config(session: Session) -> Dict[str, float]:
+    """
+    Obtiene la configuración para conductores ocupados desde project_settings
+    """
+    settings = session.query(ProjectSettings).first()
+    if not settings:
+        # Valores por defecto si no hay configuración
+        return {
+            "max_wait_time": 15.0,
+            "max_distance": 2.0,
+            "max_transit_time": 5.0
+        }
+
+    return {
+        "max_wait_time": settings.max_wait_time_for_busy_driver or 15.0,
+        "max_distance": settings.max_distance_for_busy_driver or 2.0,
+        "max_transit_time": settings.max_transit_time_for_busy_driver or 5.0
+    }
+
+
+def find_optimal_drivers(
+    session: Session,
+    client_lat: float,
+    client_lng: float,
+    type_service_id: int,
+    max_distance: float = 5.0
+) -> List[Dict]:
+    """
+    Busca conductores óptimos incluyendo conductores ocupados
+    """
+    config = get_busy_driver_config(session)
+
+    # Buscar conductores disponibles (PRIORIDAD 1)
+    available_drivers = find_available_drivers(
+        session, client_lat, client_lng, type_service_id, max_distance)
+
+    # Buscar conductores ocupados (PRIORIDAD 2)
+    busy_drivers = find_busy_drivers(
+        session, client_lat, client_lng, type_service_id, config)
+
+    # Combinar y ordenar por prioridad
+    all_drivers = []
+
+    # Agregar conductores disponibles con prioridad 1
+    for driver in available_drivers:
+        driver["priority"] = 1
+        driver["type"] = "available"
+        all_drivers.append(driver)
+
+    # Agregar conductores ocupados con prioridad 2
+    for driver in busy_drivers:
+        driver["priority"] = 2
+        driver["type"] = "busy"
+        all_drivers.append(driver)
+
+    # Ordenar por prioridad y tiempo estimado
+    all_drivers.sort(key=lambda x: (
+        x["priority"], x.get("estimated_time", float('inf'))))
+
+    return all_drivers
+
+
+def find_available_drivers(
+    session: Session,
+    client_lat: float,
+    client_lng: float,
+    type_service_id: int,
+    max_distance: float
+) -> List[Dict]:
+    """
+    Busca conductores disponibles (sin viaje activo y sin solicitud pendiente)
+    """
+    client_point = func.ST_GeomFromText(
+        f'POINT({client_lng} {client_lat})', 4326)
+
+    # Buscar conductores que:
+    # 1. Tienen rol DRIVER aprobado
+    # 2. No tienen solicitud pendiente
+    # 3. No están en viaje activo
+    # 4. Están dentro del rango de distancia
+    query = (
+        session.query(
+            User,
+            DriverInfo,
+            VehicleInfo,
+            ST_Distance_Sphere(VehicleInfo.position,
+                               client_point).label("distance")
+        )
+        .join(UserHasRole, User.id == UserHasRole.id_user)
+        .join(DriverInfo, User.id == DriverInfo.user_id)
+        .join(VehicleInfo, DriverInfo.id == VehicleInfo.driver_info_id)
+        .filter(
+            UserHasRole.id_rol == "DRIVER",
+            UserHasRole.status == RoleStatus.APPROVED,
+            UserHasRole.is_verified == True,
+            DriverInfo.pending_request_id.is_(None),  # Sin solicitud pendiente
+            VehicleInfo.vehicle_type_id == type_service_id
+        )
+    )
+
+    results = []
+    for user, driver_info, vehicle_info, distance in query.all():
+        if distance <= max_distance * 1000:  # Convertir km a metros
+            # Calcular tiempo estimado directo
+            estimated_time = calculate_direct_time(
+                client_lat, client_lng, vehicle_info.lat, vehicle_info.lng)
+
+            results.append({
+                "user_id": str(user.id),
+                "driver_info_id": str(driver_info.id),
+                "full_name": user.full_name,
+                "phone_number": user.phone_number,
+                "distance": distance,
+                "estimated_time": estimated_time,
+                "vehicle_info": {
+                    "brand": vehicle_info.brand,
+                    "model": vehicle_info.model,
+                    "plate": vehicle_info.plate
+                }
+            })
+
+    return results
+
+
+def find_busy_drivers(
+    session: Session,
+    client_lat: float,
+    client_lng: float,
+    type_service_id: int,
+    config: Dict[str, float]
+) -> List[Dict]:
+    """
+    Busca conductores ocupados que pueden tomar la solicitud
+    """
+    client_point = func.ST_GeomFromText(
+        f'POINT({client_lng} {client_lat})', 4326)
+
+    # Buscar conductores que:
+    # 1. Tienen rol DRIVER aprobado
+    # 2. Están en viaje activo (tienen client_request asignado)
+    # 3. NO tienen solicitud pendiente
+    # 4. Están dentro del rango de distancia configurado
+    query = (
+        session.query(
+            User,
+            DriverInfo,
+            VehicleInfo,
+            ClientRequest,
+            ST_Distance_Sphere(VehicleInfo.position,
+                               client_point).label("distance")
+        )
+        .join(UserHasRole, User.id == UserHasRole.id_user)
+        .join(DriverInfo, User.id == DriverInfo.user_id)
+        .join(VehicleInfo, DriverInfo.id == VehicleInfo.driver_info_id)
+        .join(ClientRequest, User.id == ClientRequest.id_driver_assigned)
+        .filter(
+            UserHasRole.id_rol == "DRIVER",
+            UserHasRole.status == RoleStatus.APPROVED,
+            UserHasRole.is_verified == True,
+            DriverInfo.pending_request_id.is_(None),  # Sin solicitud pendiente
+            VehicleInfo.vehicle_type_id == type_service_id,
+            ClientRequest.status.in_(
+                ["ON_THE_WAY", "ARRIVED", "TRAVELLING"])  # En viaje activo
+        )
+    )
+
+    results = []
+    for user, driver_info, vehicle_info, current_request, distance in query.all():
+        if distance <= config["max_distance"] * 1000:  # Convertir km a metros
+            # Calcular tiempo total para conductor ocupado
+            total_time = calculate_busy_driver_total_time(
+                session, driver_info, current_request, client_lat, client_lng, config
+            )
+
+            # Convertir minutos a segundos
+            if total_time <= config["max_wait_time"] * 60:
+                results.append({
+                    "user_id": str(user.id),
+                    "driver_info_id": str(driver_info.id),
+                    "full_name": user.full_name,
+                    "phone_number": user.phone_number,
+                    "distance": distance,
+                    "estimated_time": total_time,
+                    "current_trip_remaining_time": calculate_remaining_trip_time(current_request),
+                    "transit_time": calculate_transit_time(current_request, client_lat, client_lng),
+                    "vehicle_info": {
+                        "brand": vehicle_info.brand,
+                        "model": vehicle_info.model,
+                        "plate": vehicle_info.plate
+                    },
+                    "current_request_id": str(current_request.id)
+                })
+
+    return results
+
+
+def calculate_busy_driver_total_time(
+    session: Session,
+    driver_info: DriverInfo,
+    current_request: ClientRequest,
+    client_lat: float,
+    client_lng: float,
+    config: Dict[str, float]
+) -> float:
+    """
+    Calcula el tiempo total para un conductor ocupado
+    """
+    # Tiempo restante del viaje actual
+    remaining_time = calculate_remaining_trip_time(current_request)
+
+    # Tiempo de tránsito desde destino actual hasta nuevo cliente
+    transit_time = calculate_transit_time(
+        current_request, client_lat, client_lng)
+
+    # Tiempo estimado del nuevo viaje
+    new_trip_time = calculate_direct_time(client_lat, client_lng,
+                                          current_request.destination_lat,
+                                          current_request.destination_lng)
+
+    total_time = remaining_time + transit_time + new_trip_time
+
+    return total_time
+
+
+def calculate_remaining_trip_time(current_request: ClientRequest) -> float:
+    """
+    Calcula el tiempo restante del viaje actual
+    """
+    # Obtener coordenadas del viaje actual
+    pickup_coords = wkb_to_coords(current_request.pickup_position)
+    destination_coords = wkb_to_coords(current_request.destination_position)
+
+    if not pickup_coords or not destination_coords:
+        return 0.0
+
+    # Calcular tiempo total del viaje actual
+    total_trip_time = calculate_direct_time(
+        pickup_coords['lat'], pickup_coords['lng'],
+        destination_coords['lat'], destination_coords['lng']
+    )
+
+    # Estimar tiempo transcurrido basado en el status
+    elapsed_time = estimate_elapsed_time(
+        current_request.status, total_trip_time)
+
+    remaining_time = max(0, total_trip_time - elapsed_time)
+
+    return remaining_time
+
+
+def calculate_transit_time(current_request: ClientRequest, client_lat: float, client_lng: float) -> float:
+    """
+    Calcula el tiempo de tránsito desde el destino actual hasta el nuevo cliente
+    """
+    destination_coords = wkb_to_coords(current_request.destination_position)
+
+    if not destination_coords:
+        return 0.0
+
+    transit_time = calculate_direct_time(
+        destination_coords['lat'], destination_coords['lng'],
+        client_lat, client_lng
+    )
+
+    return transit_time
+
+
+def calculate_direct_time(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """
+    Calcula el tiempo directo entre dos puntos usando Google Distance Matrix
+    """
+    try:
+        url = "https://maps.googleapis.com/maps/api/distancematrix/json"
+        params = {
+            "origins": f"{lat1},{lng1}",
+            "destinations": f"{lat2},{lng2}",
+            "units": "metric",
+            "key": settings.GOOGLE_API_KEY,
+            "mode": "driving"
+        }
+
+        response = requests.get(url, params=params)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("status") == "OK" and data["rows"][0]["elements"][0]["status"] == "OK":
+                # En segundos
+                return data["rows"][0]["elements"][0]["duration"]["value"]
+
+        # Fallback: cálculo aproximado
+        return calculate_approximate_time(lat1, lng1, lat2, lng2)
+
+    except Exception as e:
+        logger.error(f"Error calculating direct time: {e}")
+        return calculate_approximate_time(lat1, lng1, lat2, lng2)
+
+
+def calculate_approximate_time(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """
+    Calcula tiempo aproximado basado en distancia
+    """
+    # Distancia en km
+    distance = ((lat2 - lat1) ** 2 + (lng2 - lng1) ** 2) ** 0.5 * 111
+
+    # Velocidad promedio 30 km/h en ciudad
+    speed_kmh = 30
+    time_hours = distance / speed_kmh
+    time_seconds = time_hours * 3600
+
+    return time_seconds
+
+
+def estimate_elapsed_time(status: StatusEnum, total_trip_time: float) -> float:
+    """
+    Estima el tiempo transcurrido basado en el status del viaje
+    """
+    if status == StatusEnum.ON_THE_WAY:
+        return total_trip_time * 0.2  # 20% del viaje
+    elif status == StatusEnum.ARRIVED:
+        return total_trip_time * 0.5  # 50% del viaje
+    elif status == StatusEnum.TRAVELLING:
+        return total_trip_time * 0.8  # 80% del viaje
+    else:
+        return 0.0
+
+
+def validate_busy_driver(driver_info: DriverInfo, config: Dict[str, float]) -> bool:
+    """
+    Valida si un conductor ocupado puede tomar una nueva solicitud
+    """
+    # Verificar que no tenga solicitud pendiente
+    if driver_info.pending_request_id is not None:
+        return False
+
+    # Verificar que no haya aceptado una solicitud recientemente
+    if driver_info.pending_request_accepted_at:
+        time_since_accepted = datetime.now(
+            COLOMBIA_TZ) - driver_info.pending_request_accepted_at
+        if time_since_accepted.total_seconds() < 60:  # Mínimo 1 minuto entre solicitudes
+            return False
+
+    return True
+
+
+def assign_busy_driver(
+    session: Session,
+    client_request_id: UUID,
+    driver_id: UUID,
+    estimated_pickup_time: datetime,
+    remaining_time: float,
+    transit_time: float
+) -> bool:
+    """
+    Asigna un conductor ocupado a una solicitud
+    """
+    try:
+        # Obtener la solicitud
+        client_request = session.query(ClientRequest).filter(
+            ClientRequest.id == client_request_id
+        ).first()
+
+        if not client_request:
+            return False
+
+        # Obtener el conductor
+        driver_info = session.query(DriverInfo).filter(
+            DriverInfo.user_id == driver_id
+        ).first()
+
+        if not driver_info:
+            return False
+
+        # Validar que el conductor puede tomar la solicitud
+        config = get_busy_driver_config(session)
+        if not validate_busy_driver(driver_info, config):
+            return False
+
+        # Actualizar la solicitud
+        client_request.assigned_busy_driver_id = driver_id
+        client_request.estimated_pickup_time = estimated_pickup_time
+        client_request.driver_current_trip_remaining_time = remaining_time
+        client_request.driver_transit_time = transit_time
+
+        # Actualizar el conductor
+        driver_info.pending_request_id = client_request_id
+        driver_info.pending_request_accepted_at = datetime.now(COLOMBIA_TZ)
+
+        session.add(client_request)
+        session.add(driver_info)
+        session.commit()
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Error assigning busy driver: {e}")
+        session.rollback()
+        return False
