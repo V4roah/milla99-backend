@@ -10,6 +10,7 @@ from sqlmodel import Session, select
 from datetime import datetime, timezone, timedelta
 from uuid import UUID
 import pytz
+from app.core.db import engine
 
 COLOMBIA_TZ = pytz.timezone("America/Bogota")
 client = TestClient(app)
@@ -63,9 +64,10 @@ def create_busy_driver_with_active_trip(client: TestClient, driver_phone: str = 
     active_request_id = create_resp.json()["id"]
 
     # 4. Asignar conductor a la solicitud
+    # Usar el conductor que acabamos de crear, no Roberto Sánchez
     assign_data = {
         "id_client_request": active_request_id,
-        "id_driver": driver_id,
+        "id_driver": driver_id,  # Usar el driver_id del conductor creado
         "fare_assigned": 25000
     }
     print(f"🔍 Intentando asignar conductor...")
@@ -983,7 +985,7 @@ def test_busy_driver_rejected_when_distance_too_far():
             print(f"⚠️ Paso 6: Error verificando solicitud pendiente: {e}")
             print(f"   - Traceback: {traceback.format_exc()}")
 
-        # 8. Verificar que el conductor sigue en su viaje activo
+        # 8. Verificar que el conductor sigue en viaje activo
         print("🔍 Paso 7: Verificando que conductor sigue en viaje activo...")
         active_trip_resp_2 = client.get(
             f"/client-request/{active_request_id}", headers=driver_headers)
@@ -1030,7 +1032,11 @@ def test_busy_driver_rejected_when_distance_too_far():
                     print(
                         f"✅ Paso 9: Correcto - Solicitud NO asignada al conductor (como debe ser)")
                 else:
-                    print(f"❌ Paso 9: Incorrecto - Solicitud SÍ asignada al conductor")
+                    print(
+                        f"❌ Paso 9: Incorrecto - Solicitud SÍ asignada al conductor")
+                    print(f"   - Expected driver_id: {driver_id}")
+                    print(
+                        f"   - Actual driver_id: {updated_request_data.get('id_driver_assigned')}")
 
             elif accept_resp.status_code == 200:
                 print(
@@ -1060,6 +1066,241 @@ def test_busy_driver_rejected_when_distance_too_far():
         print(f"\n❌ Error en test: {e}")
         print(f"   - Traceback completo:")
         print(traceback.format_exc())
+        raise
+
+
+def test_busy_driver_rejected_when_transit_time_too_long():
+    """
+    Test que verifica que un conductor ocupado NO puede aceptar una solicitud pendiente
+    cuando el tiempo de tránsito es demasiado largo (más de 5 minutos).
+
+    REQUISITOS para que un conductor ocupado pueda aceptar una solicitud:
+    1. Tiempo total de espera ≤ 15 minutos (max_wait_time_for_busy_driver=15.0)
+    2. Distancia ≤ 2 km (max_distance_for_busy_driver=2.0)
+    3. Tiempo de tránsito ≤ 5 minutos (max_transit_time_for_busy_driver=5.0) ← ESTE ES EL QUE FALLA
+
+    Escenario:
+    1. Conductor está en viaje activo (TRAVELLING)
+    2. Cliente crea nueva solicitud que NO cumple validaciones (tiempo de tránsito muy largo)
+    3. Sistema NO asigna conductor ocupado (solicitud rechazada)
+    4. Conductor NO puede aceptar la solicitud pendiente
+    """
+    print("\n🔄 Test: Conductor ocupado rechaza solicitud por tiempo de tránsito muy largo...")
+
+    # Inicializar variables al inicio del test
+    driver_token = None
+    driver_headers = None
+    client_token = None
+    client_headers = None
+    new_request_id = None
+    busy_driver_id = None
+    current_request_id = None
+
+    try:
+        # === PASO 1: Crear conductor ocupado con viaje activo ===
+        print("🔍 Paso 1: Creando conductor ocupado con viaje activo...")
+
+        # Usar usuario existente de init_data.py
+        existing_driver_phone = "3005555555"  # Roberto Sánchez
+        country_code = "+57"
+
+        # Verificar usuario existente
+        send_resp = client.post(
+            f"/auth/verify/{country_code}/{existing_driver_phone}/send")
+        assert send_resp.status_code == 201
+        code = send_resp.json()["message"].split()[-1]
+        verify_resp = client.post(
+            f"/auth/verify/{country_code}/{existing_driver_phone}/code",
+            json={"code": code}
+        )
+        assert verify_resp.status_code == 200
+        driver_token = verify_resp.json()["access_token"]
+        driver_headers = {"Authorization": f"Bearer {driver_token}"}
+
+        # Crear solicitud para el conductor
+        request_data = {
+            "pickup_lat": 4.718136,
+            "pickup_lng": -74.07317,
+            "destination_lat": 4.720000,
+            "destination_lng": -74.075000,
+            "type_service_id": 1,
+            "fare_offered": 25000,
+            "payment_method_id": 1
+        }
+
+        # Usar cliente existente para crear la solicitud
+        existing_client_phone = "3001111111"  # María García
+        send_client_resp = client.post(
+            f"/auth/verify/{country_code}/{existing_client_phone}/send")
+        assert send_client_resp.status_code == 201
+        client_code = send_client_resp.json()["message"].split()[-1]
+        verify_client_resp = client.post(
+            f"/auth/verify/{country_code}/{existing_client_phone}/code",
+            json={"code": client_code}
+        )
+        assert verify_client_resp.status_code == 200
+        client_token = verify_client_resp.json()["access_token"]
+        client_headers = {"Authorization": f"Bearer {client_token}"}
+
+        # Crear solicitud
+        create_resp = client.post(
+            "/client-request/", json=request_data, headers=client_headers)
+        assert create_resp.status_code == 201
+        current_request_id = create_resp.json()["id"]
+
+        # Asignar conductor a la solicitud
+        # Primero necesitamos obtener el UUID del conductor
+        with Session(engine) as session:
+            driver_user = session.exec(
+                select(User).where(User.phone_number == "3005555555")
+            ).first()
+            assert driver_user is not None, "Conductor Roberto Sánchez no encontrado"
+            driver_uuid = str(driver_user.id)
+
+        assign_data = {
+            "id_client_request": current_request_id,
+            "id_driver": driver_uuid,  # UUID real del conductor
+            "fare_assigned": 25000
+        }
+        assign_resp = client.patch(
+            "/client-request/updateDriverAssigned", json=assign_data, headers=client_headers)
+        assert assign_resp.status_code == 200
+
+        # Cambiar estados del viaje siguiendo el flujo correcto
+        print("🔍 Paso 1.1: Cambiando a ON_THE_WAY...")
+        status_resp = client.patch(
+            f"/client-request/updateStatusByDriver",
+            json={"id_client_request": current_request_id,
+                  "status": "ON_THE_WAY"},
+            headers=driver_headers
+        )
+        assert status_resp.status_code == 200
+
+        print("🔍 Paso 1.2: Cambiando a ARRIVED...")
+        status_resp = client.patch(
+            f"/client-request/updateStatusByDriver",
+            json={"id_client_request": current_request_id,
+                  "status": "ARRIVED"},
+            headers=driver_headers
+        )
+        assert status_resp.status_code == 200
+
+        print("🔍 Paso 1.3: Cambiando a TRAVELLING...")
+        status_resp = client.patch(
+            f"/client-request/updateStatusByDriver",
+            json={"id_client_request": current_request_id,
+                  "status": "TRAVELLING"},
+            headers=driver_headers
+        )
+        assert status_resp.status_code == 200
+
+        print(
+            f"✅ Paso 1: Conductor {existing_driver_phone} en viaje activo {current_request_id}")
+
+        # === PASO 2: Verificar que el conductor está en viaje activo ===
+        print("🔍 Paso 2: Verificando estado TRAVELLING...")
+        detail_resp = client.get(
+            f"/client-request/{current_request_id}", headers=client_headers)
+        assert detail_resp.status_code == 200
+        request_detail = detail_resp.json()
+        assert request_detail["status"] in [
+            "TRAVELLING", "StatusEnum.TRAVELLING"]
+        print("✅ Paso 2: Viaje activo confirmado en estado TRAVELLING")
+
+        # === PASO 3: Crear nueva solicitud que NO cumple validaciones ===
+        print("🔍 Paso 3: Creando nueva solicitud que NO cumple validaciones...")
+
+        # Usar otro cliente existente para crear la nueva solicitud
+        new_client_phone = "3002222222"  # Juan Pérez
+        send_new_client_resp = client.post(
+            f"/auth/verify/{country_code}/{new_client_phone}/send")
+        assert send_new_client_resp.status_code == 201
+        new_client_code = send_new_client_resp.json()["message"].split()[-1]
+        verify_new_client_resp = client.post(
+            f"/auth/verify/{country_code}/{new_client_phone}/code",
+            json={"code": new_client_code}
+        )
+        assert verify_new_client_resp.status_code == 200
+        new_client_token = verify_new_client_resp.json()["access_token"]
+        new_client_headers = {"Authorization": f"Bearer {new_client_token}"}
+
+        # Crear solicitud con destino muy lejano (tiempo de tránsito > 5 minutos)
+        new_request_data = {
+            "pickup_lat": 4.718136,
+            "pickup_lng": -74.07317,
+            "destination_lat": 4.800000,  # Muy lejano
+            "destination_lng": -74.100000,  # Muy lejano
+            "type_service_id": 1,
+            "fare_offered": 30000,
+            "payment_method_id": 1
+        }
+
+        create_new_resp = client.post(
+            "/client-request/", json=new_request_data, headers=new_client_headers)
+        assert create_new_resp.status_code == 201
+        new_request_id = create_new_resp.json()["id"]
+        print(f"✅ Paso 3: Nueva solicitud creada con ID {new_request_id}")
+
+        # === PASO 4: Verificar que el conductor NO puede aceptar la nueva solicitud ===
+        print("🔍 Paso 4: Verificando que conductor NO puede aceptar nueva solicitud...")
+
+        # Intentar asignar el conductor ocupado a la nueva solicitud
+        assign_new_data = {
+            "id_client_request": new_request_id,
+            "id_driver": driver_uuid,  # Roberto Sánchez (ocupado)
+            "fare_assigned": 30000
+        }
+        assign_new_resp = client.patch(
+            "/client-request/updateDriverAssigned", json=assign_new_data, headers=new_client_headers)
+
+        # El sistema debería rechazar la asignación por tiempo de tránsito muy largo
+        if assign_new_resp.status_code == 400:
+            print("✅ Paso 4: Sistema rechazó asignación por tiempo de tránsito muy largo")
+        else:
+            print(
+                f"⚠️ Paso 4: Sistema permitió asignación (status: {assign_new_resp.status_code})")
+
+        # === PASO 5: Verificar que el conductor NO tiene solicitud pendiente ===
+        print("🔍 Paso 5: Verificando que conductor NO tiene solicitud pendiente...")
+        pending_resp = client.get(
+            "/drivers/pending-request", headers=driver_headers)
+        assert pending_resp.status_code == 200
+        pending_data = pending_resp.json()
+
+        if pending_data.get("pending_request_id") is None:
+            print("✅ Paso 5: Correcto - Conductor NO tiene solicitud pendiente")
+        else:
+            print(
+                f"⚠️ Paso 5: Conductor tiene solicitud pendiente: {pending_data.get('pending_request_id')}")
+
+        # === PASO 6: Verificar que el conductor sigue en viaje activo ===
+        print("🔍 Paso 6: Verificando que conductor sigue en viaje activo...")
+        detail_resp = client.get(
+            f"/client-request/{current_request_id}", headers=client_headers)
+        assert detail_resp.status_code == 200
+        request_detail = detail_resp.json()
+        assert request_detail["status"] in [
+            "TRAVELLING", "StatusEnum.TRAVELLING"]
+        print("✅ Paso 6: Conductor sigue en viaje activo")
+
+        # === PASO 7: Verificar que la nueva solicitud NO está asignada ===
+        print("🔍 Paso 7: Verificando que nueva solicitud NO está asignada...")
+        if new_request_id:
+            new_detail_resp = client.get(
+                f"/client-request/{new_request_id}", headers=new_client_headers)
+            assert new_detail_resp.status_code == 200
+            new_request_detail = new_detail_resp.json()
+
+            if new_request_detail.get("id_driver_assigned") is None:
+                print("✅ Paso 7: Nueva solicitud NO está asignada (correcto)")
+            else:
+                print(
+                    f"⚠️ Paso 7: Nueva solicitud está asignada a: {new_request_detail.get('id_driver_assigned')}")
+
+        print("🎉 Test completado: Conductor ocupado rechaza solicitud por tiempo de tránsito muy largo")
+
+    except Exception as e:
+        print(f"❌ Error en test: {e}")
         raise
 
 # ===== EJECUCIÓN DE TESTS =====

@@ -1780,9 +1780,9 @@ def find_optimal_drivers_with_search_service(
                 "type": "available",
                 "priority": 1,
                 "vehicle_info": {
-                    "brand": driver.vehicle_info[0].brand if driver.vehicle_info else "N/A",
-                    "model": driver.vehicle_info[0].model if driver.vehicle_info else "N/A",
-                    "plate": driver.vehicle_info[0].plate if driver.vehicle_info else "N/A"
+                    "brand": driver.vehicle_info.brand if driver.vehicle_info else "N/A",
+                    "model": driver.vehicle_info.model if driver.vehicle_info else "N/A",
+                    "plate": driver.vehicle_info.plate if driver.vehicle_info else "N/A"
                 } if driver.vehicle_info else {}
             })
 
@@ -1801,9 +1801,9 @@ def find_optimal_drivers_with_search_service(
                 "priority": 2,
                 "total_time": driver_info["total_time"],
                 "vehicle_info": {
-                    "brand": driver.vehicle_info[0].brand if driver.vehicle_info else "N/A",
-                    "model": driver.vehicle_info[0].model if driver.vehicle_info else "N/A",
-                    "plate": driver.vehicle_info[0].plate if driver.vehicle_info else "N/A"
+                    "brand": driver.vehicle_info.brand if driver.vehicle_info else "N/A",
+                    "model": driver.vehicle_info.model if driver.vehicle_info else "N/A",
+                    "plate": driver.vehicle_info.plate if driver.vehicle_info else "N/A"
                 } if driver.vehicle_info else {}
             })
 
