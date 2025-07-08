@@ -1379,6 +1379,7 @@ def driver_canceled_service(session: Session, id_client_request: UUID, user_id: 
 
     # Registrar la cancelación
     record_driver_cancellation(session, user_id, id_client_request)
+    session.commit()  # Hacer commit para que esté disponible para el conteo
 
     # Solo verificar límites y aplicar suspensión si está en ACCEPTED u ON_THE_WAY
     if client_request.status in [StatusEnum.ACCEPTED, StatusEnum.ON_THE_WAY]:
@@ -1466,35 +1467,82 @@ def record_driver_cancellation(session: Session, driver_id: UUID, client_request
     """
     Registra la cancelación del conductor en la tabla de registros.
     """
+    print(
+        f"DEBUG: record_driver_cancellation - driver_id: {driver_id}, client_request_id: {client_request_id}")
+
     cancellation_record = DriverCancellation(
         id_driver=driver_id,
         id_client_request=client_request_id
     )
     session.add(cancellation_record)
-    session.flush()  # Para obtener el ID sin hacer commit
+    print(
+        f"DEBUG: record_driver_cancellation - cancellation_record created with cancelled_at: {cancellation_record.cancelled_at}")
+    # No hacer flush aquí, el commit se hará después de registrar
 
 
 def get_daily_cancellation_count(session: Session, driver_id: UUID) -> int:
     """
     Obtiene el número de cancelaciones hechas por un conductor en el día actual.
     """
-    today_start = datetime.now(timezone.utc).replace(
+    # Usar zona horaria de Colombia para la comparación
+    today_start = datetime.now(COLOMBIA_TZ).replace(
         hour=0, minute=0, second=0, microsecond=0)
-    return session.query(DriverCancellation).filter(
-        DriverCancellation.id_driver == driver_id,
-        DriverCancellation.cancelled_at >= today_start
-    ).count()
+
+    # Debug: Imprimir información de la consulta
+    print(f"DEBUG: get_daily_cancellation_count - driver_id: {driver_id}")
+    print(f"DEBUG: get_daily_cancellation_count - today_start: {today_start}")
+
+    # Obtener todos los registros para debug
+    all_cancellations = session.query(DriverCancellation).filter(
+        DriverCancellation.id_driver == driver_id
+    ).all()
+    print(
+        f"DEBUG: get_daily_cancellation_count - total cancellations for driver: {len(all_cancellations)}")
+
+    for cancellation in all_cancellations:
+        print(
+            f"DEBUG: Cancellation - id: {cancellation.id}, cancelled_at: {cancellation.cancelled_at}, tzinfo: {cancellation.cancelled_at.tzinfo}")
+
+    # Consulta filtrada por fecha - manejar zona horaria
+    daily_cancellations = []
+    for cancellation in all_cancellations:
+        # Si cancelled_at no tiene zona horaria, asumir que es hora local de Colombia
+        cancelled_at = cancellation.cancelled_at
+        if cancelled_at.tzinfo is None:
+            cancelled_at = COLOMBIA_TZ.localize(cancelled_at)
+
+        if cancelled_at >= today_start:
+            daily_cancellations.append(cancellation)
+
+    print(
+        f"DEBUG: get_daily_cancellation_count - daily cancellations: {len(daily_cancellations)}")
+
+    return len(daily_cancellations)
 
 
 def get_weekly_cancellation_count(session: Session, driver_id: UUID) -> int:
     """
     Obtiene el número de cancelaciones hechas por un conductor en los últimos 7 días.
     """
-    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
-    return session.query(DriverCancellation).filter(
-        DriverCancellation.id_driver == driver_id,
-        DriverCancellation.cancelled_at >= seven_days_ago
-    ).count()
+    seven_days_ago = datetime.now(COLOMBIA_TZ) - timedelta(days=7)
+
+    # Obtener todas las cancelaciones del conductor
+    all_cancellations = session.query(DriverCancellation).filter(
+        DriverCancellation.id_driver == driver_id
+    ).all()
+
+    # Filtrar por fecha - manejar zona horaria
+    weekly_cancellations = []
+    for cancellation in all_cancellations:
+        # Si cancelled_at no tiene zona horaria, asumir que es hora local de Colombia
+        cancelled_at = cancellation.cancelled_at
+        if cancelled_at.tzinfo is None:
+            cancelled_at = COLOMBIA_TZ.localize(cancelled_at)
+
+        if cancelled_at >= seven_days_ago:
+            weekly_cancellations.append(cancellation)
+
+    return len(weekly_cancellations)
 
 
 def delete_old_cancellations(session: Session, driver_id: UUID):
