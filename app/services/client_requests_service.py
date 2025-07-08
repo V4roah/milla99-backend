@@ -16,6 +16,7 @@ from app.core.config import settings
 from app.models.user_has_roles import UserHasRole, RoleStatus
 from app.models.driver_info import DriverInfo
 from app.models.vehicle_info import VehicleInfo
+from app.models.driver_position import DriverPosition
 from app.services.driver_trip_offer_service import get_average_rating
 from sqlalchemy.orm import selectinload
 import traceback
@@ -857,17 +858,19 @@ def get_nearby_drivers_service(
                 User,
                 DriverInfo,
                 VehicleInfo,
-                ST_Distance_Sphere(DriverInfo.current_position,
+                DriverPosition,
+                ST_Distance_Sphere(DriverPosition.position,
                                    client_point).label("distance")
             )
             .join(UserHasRole, UserHasRole.id_user == User.id)
             .join(DriverInfo, DriverInfo.user_id == User.id)
             .join(VehicleInfo, VehicleInfo.driver_info_id == DriverInfo.id)
+            .join(DriverPosition, DriverPosition.id_driver == User.id)
             .filter(
                 UserHasRole.id_rol == "DRIVER",
                 UserHasRole.status == RoleStatus.APPROVED,
-                DriverInfo.is_active == True,
-                DriverInfo.current_position.isnot(None),
+                User.is_active == True,
+                DriverPosition.position.isnot(None),
                 VehicleInfo.vehicle_type_id == type_service.vehicle_type_id
             )
         )
@@ -881,7 +884,7 @@ def get_nearby_drivers_service(
         query_results = base_query.all()
 
         for row in query_results:
-            user, driver_info, vehicle_info, distance = row
+            user, driver_info, vehicle_info, driver_position, distance = row
 
             # Calcular calificación promedio del conductor
             avg_rating = session.query(
@@ -892,17 +895,17 @@ def get_nearby_drivers_service(
             ).scalar() or 0.0
 
             result = {
-                "id": user.id,
+                "id": str(user.id),
                 "driver_info": {
-                    "id": driver_info.id,
+                    "id": str(driver_info.id),
                     "first_name": driver_info.first_name,
                     "last_name": driver_info.last_name,
                     "email": driver_info.email,
-                    "selfie_url": driver_info.selfie_url,
-                    "current_position": wkb_to_coords(driver_info.current_position)
+                    "selfie_url": user.selfie_url,
+                    "current_position": wkb_to_coords(driver_position.position)
                 },
                 "vehicle_info": {
-                    "id": vehicle_info.id,
+                    "id": str(vehicle_info.id),
                     "brand": vehicle_info.brand,
                     "model": vehicle_info.model,
                     "model_year": vehicle_info.model_year,
@@ -1767,8 +1770,8 @@ def find_optimal_drivers_with_search_service(
         for driver_info in available_drivers_with_priority:
             driver = driver_info["driver"]
             all_drivers.append({
-                "user_id": str(driver.user_id),
-                "driver_info_id": str(driver.id),
+                "user_id": driver.user_id,
+                "driver_info_id": driver.id,
                 "full_name": driver.user.full_name if driver.user else "N/A",
                 "phone_number": driver.user.phone_number if driver.user else "N/A",
                 "distance": driver_info["distance"],
@@ -1787,8 +1790,8 @@ def find_optimal_drivers_with_search_service(
         for driver_info in busy_drivers_with_priority:
             driver = driver_info["driver"]
             all_drivers.append({
-                "user_id": str(driver.user_id),
-                "driver_info_id": str(driver.id),
+                "user_id": driver.user_id,
+                "driver_info_id": driver.id,
                 "full_name": driver.user.full_name if driver.user else "N/A",
                 "phone_number": driver.user.phone_number if driver.user else "N/A",
                 "distance": driver_info["distance"],
@@ -1866,8 +1869,8 @@ def find_available_drivers(
                 client_lat, client_lng, vehicle_info.lat, vehicle_info.lng)
 
             results.append({
-                "user_id": str(user.id),
-                "driver_info_id": str(driver_info.id),
+                "user_id": user.id,
+                "driver_info_id": driver_info.id,
                 "full_name": user.full_name,
                 "phone_number": user.phone_number,
                 "distance": distance,
@@ -1935,8 +1938,8 @@ def find_busy_drivers(
             # Convertir minutos a segundos
             if total_time <= config["max_wait_time"] * 60:
                 results.append({
-                    "user_id": str(user.id),
-                    "driver_info_id": str(driver_info.id),
+                    "user_id": user.id,
+                    "driver_info_id": driver_info.id,
                     "full_name": user.full_name,
                     "phone_number": user.phone_number,
                     "distance": distance,
@@ -1948,7 +1951,7 @@ def find_busy_drivers(
                         "model": vehicle_info.model,
                         "plate": vehicle_info.plate
                     },
-                    "current_request_id": str(current_request.id)
+                    "current_request_id": current_request.id
                 })
 
     return results
