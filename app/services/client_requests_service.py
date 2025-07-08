@@ -2181,8 +2181,8 @@ def assign_busy_driver(session, client_request_id, driver_id, estimated_pickup_t
             return False
 
         # 6. VALIDAR TIEMPO TOTAL
-        # Convertir a minutos
-        total_time_minutes = (remaining_time + transit_time) / 60
+        # Los valores ya están en minutos (vienen del router)
+        total_time_minutes = remaining_time + transit_time
         print(f"🔍 Tiempo total calculado: {total_time_minutes:.2f} minutos")
 
         if total_time_minutes > config["max_wait_time"]:
@@ -2191,7 +2191,7 @@ def assign_busy_driver(session, client_request_id, driver_id, estimated_pickup_t
             return False
 
         # 7. VALIDAR TIEMPO DE TRÁNSITO
-        transit_time_minutes = transit_time / 60  # Convertir a minutos
+        transit_time_minutes = transit_time  # Ya está en minutos
         print(f"🔍 Tiempo de tránsito: {transit_time_minutes:.2f} minutos")
 
         if transit_time_minutes > config["max_transit_time"]:

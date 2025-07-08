@@ -744,13 +744,45 @@ def assign_driver(
 
         if active_request:
             # El conductor está ocupado, usar assign_busy_driver
-            from app.services.client_requests_service import assign_busy_driver, calculate_busy_driver_total_time, get_busy_driver_config
+            from app.services.client_requests_service import (
+                assign_busy_driver,
+                calculate_busy_driver_total_time,
+                get_busy_driver_config,
+                calculate_remaining_trip_time,
+                calculate_transit_time
+            )
             from datetime import datetime, timedelta
 
-            # Calcular tiempos estimados
+            # Obtener la nueva solicitud para calcular tiempos
+            new_request = session.query(ClientRequest).filter(
+                ClientRequest.id == request_data.id_client_request
+            ).first()
+
+            if not new_request:
+                raise HTTPException(
+                    status_code=404, detail="Solicitud no encontrada")
+
+            # Calcular tiempos dinámicamente
             config = get_busy_driver_config(session)
-            remaining_time = 5.0  # 5 minutos estimados para terminar viaje actual
-            transit_time = 3.0    # 3 minutos estimados para llegar al nuevo cliente
+
+            # Calcular tiempo restante del viaje actual (en minutos)
+            remaining_time = calculate_remaining_trip_time(
+                active_request) / 60.0
+
+            # Calcular tiempo de tránsito al nuevo cliente (en minutos)
+            transit_time = calculate_transit_time(
+                active_request,
+                new_request.pickup_lat,
+                new_request.pickup_lng
+            ) / 60.0
+
+            print(f"🔍 Tiempos calculados dinámicamente:")
+            print(
+                f"   - Tiempo restante del viaje actual: {remaining_time:.2f} minutos")
+            print(
+                f"   - Tiempo de tránsito al nuevo cliente: {transit_time:.2f} minutos")
+            print(
+                f"   - Tiempo total: {remaining_time + transit_time:.2f} minutos")
 
             # Calcular tiempo estimado de recogida
             estimated_pickup_time = datetime.now(
