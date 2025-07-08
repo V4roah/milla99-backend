@@ -2107,33 +2107,127 @@ def validate_busy_driver(driver_info: DriverInfo, config: Dict[str, float]) -> b
 def assign_busy_driver(session, client_request_id, driver_id, estimated_pickup_time, remaining_time, transit_time):
     print(
         f"DEBUG: assign_busy_driver called with client_request_id={client_request_id}, driver_id={driver_id}")
+
     from app.models.client_request import ClientRequest
     from app.models.driver_info import DriverInfo
+    from app.utils.geo_utils import wkb_to_coords
+
+    # 1. Obtener configuraciones dinámicas
+    config = get_busy_driver_config(session)
+    print(f"🔧 Configuraciones de validación:")
+    print(f"   - Tiempo máximo de espera: {config['max_wait_time']} minutos")
+    print(f"   - Distancia máxima: {config['max_distance']} km")
+    print(
+        f"   - Tiempo máximo de tránsito: {config['max_transit_time']} minutos")
+
+    # 2. Obtener datos necesarios
     client_request = session.query(ClientRequest).filter(
         ClientRequest.id == client_request_id).first()
     driver_info = session.query(DriverInfo).filter(
         DriverInfo.user_id == driver_id).first()
-    print(
-        f"DEBUG: Before assignment - driver_info.id={driver_info.id if driver_info else None}, driver_info.user_id={driver_info.user_id if driver_info else None}, driver_info.pending_request_id={driver_info.pending_request_id if driver_info else None}")
-    print(
-        f"DEBUG: Before assignment - client_request.id={client_request.id if client_request else None}, client_request.assigned_busy_driver_id={client_request.assigned_busy_driver_id if client_request else None}")
-    if client_request and driver_info:
-        client_request.assigned_busy_driver_id = driver_id
-        client_request.estimated_pickup_time = estimated_pickup_time
-        client_request.driver_current_trip_remaining_time = remaining_time
-        client_request.driver_transit_time = transit_time
-        driver_info.pending_request_id = client_request_id
-        session.add(client_request)
-        session.add(driver_info)
-        session.commit()
-        session.refresh(driver_info)
-        session.refresh(client_request)
-        print(
-            f"DEBUG: After assignment - driver_info.id={driver_info.id}, driver_info.user_id={driver_info.user_id}, driver_info.pending_request_id={driver_info.pending_request_id}")
-        print(
-            f"DEBUG: After assignment - client_request.id={client_request.id}, client_request.assigned_busy_driver_id={client_request.assigned_busy_driver_id}")
-    else:
+
+    if not client_request or not driver_info:
         print(f"DEBUG: assign_busy_driver - client_request or driver_info not found")
+        return False
+
+    # 3. Obtener viaje activo del conductor
+    active_request = session.query(ClientRequest).filter(
+        ClientRequest.id_driver_assigned == driver_id,
+        ClientRequest.status.in_(["ON_THE_WAY", "ARRIVED", "TRAVELLING"])
+    ).first()
+
+    if not active_request:
+        print(f"DEBUG: assign_busy_driver - No active request found for driver")
+        return False
+
+    # 4. Calcular distancia entre cliente y conductor
+    try:
+        # Obtener posición del conductor (desde DriverPosition)
+        from app.models.driver_position import DriverPosition
+        driver_position = session.query(DriverPosition).filter(
+            DriverPosition.id_driver == driver_id
+        ).first()
+
+        if not driver_position or not driver_position.position:
+            print(f"DEBUG: assign_busy_driver - No driver position found")
+            return False
+
+        # Obtener coordenadas del conductor
+        driver_coords = wkb_to_coords(driver_position.position)
+        driver_lat, driver_lng = driver_coords["lat"], driver_coords["lng"]
+
+        # Obtener coordenadas del cliente
+        client_coords = wkb_to_coords(client_request.pickup_position)
+        client_lat, client_lng = client_coords["lat"], client_coords["lng"]
+
+        # Calcular distancia en metros
+        from sqlalchemy import func
+        client_point = func.ST_GeomFromText(
+            f'POINT({client_lng} {client_lat})', 4326)
+        vehicle_point = func.ST_GeomFromText(
+            f'POINT({driver_lng} {driver_lat})', 4326)
+
+        distance_result = session.query(
+            func.ST_Distance_Sphere(vehicle_point, client_point)
+        ).scalar()
+
+        distance_km = distance_result / 1000  # Convertir a km
+        print(f"🔍 Distancia calculada: {distance_km:.2f} km")
+
+        # 5. VALIDAR DISTANCIA
+        if distance_km > config["max_distance"]:
+            print(
+                f"❌ Distancia excede el límite: {distance_km:.2f} km > {config['max_distance']} km")
+            return False
+
+        # 6. VALIDAR TIEMPO TOTAL
+        # Convertir a minutos
+        total_time_minutes = (remaining_time + transit_time) / 60
+        print(f"🔍 Tiempo total calculado: {total_time_minutes:.2f} minutos")
+
+        if total_time_minutes > config["max_wait_time"]:
+            print(
+                f"❌ Tiempo total excede el límite: {total_time_minutes:.2f} min > {config['max_wait_time']} min")
+            return False
+
+        # 7. VALIDAR TIEMPO DE TRÁNSITO
+        transit_time_minutes = transit_time / 60  # Convertir a minutos
+        print(f"🔍 Tiempo de tránsito: {transit_time_minutes:.2f} minutos")
+
+        if transit_time_minutes > config["max_transit_time"]:
+            print(
+                f"❌ Tiempo de tránsito excede el límite: {transit_time_minutes:.2f} min > {config['max_transit_time']} min")
+            return False
+
+        print(f"✅ Todas las validaciones pasaron - Procediendo con asignación")
+
+    except Exception as e:
+        print(f"❌ Error calculando validaciones: {e}")
+        return False
+
+    # 8. Si pasa todas las validaciones, proceder con la asignación
+    print(
+        f"DEBUG: Before assignment - driver_info.id={driver_info.id}, driver_info.user_id={driver_info.user_id}, driver_info.pending_request_id={driver_info.pending_request_id}")
+    print(
+        f"DEBUG: Before assignment - client_request.id={client_request.id}, client_request.assigned_busy_driver_id={client_request.assigned_busy_driver_id}")
+
+    client_request.assigned_busy_driver_id = driver_id
+    client_request.estimated_pickup_time = estimated_pickup_time
+    client_request.driver_current_trip_remaining_time = remaining_time
+    client_request.driver_transit_time = transit_time
+    driver_info.pending_request_id = client_request_id
+
+    session.add(client_request)
+    session.add(driver_info)
+    session.commit()
+    session.refresh(driver_info)
+    session.refresh(client_request)
+
+    print(
+        f"DEBUG: After assignment - driver_info.id={driver_info.id}, driver_info.user_id={driver_info.user_id}, driver_info.pending_request_id={driver_info.pending_request_id}")
+    print(
+        f"DEBUG: After assignment - client_request.id={client_request.id}, client_request.assigned_busy_driver_id={client_request.assigned_busy_driver_id}")
+
     return True
 
 

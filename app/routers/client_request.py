@@ -769,8 +769,8 @@ def assign_driver(
                 return {"success": True, "message": "Conductor ocupado asignado correctamente como pendiente"}
             else:
                 raise HTTPException(
-                    status_code=400,
-                    detail="No se pudo asignar el conductor ocupado"
+                    status_code=409,
+                    detail="Conductor ocupado no cumple con las validaciones de distancia, tiempo total o tiempo de tránsito"
                 )
         else:
             # El conductor está disponible, usar assign_driver_service normal

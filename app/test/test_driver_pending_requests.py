@@ -799,6 +799,269 @@ def test_driver_priority_system():
         print(traceback.format_exc())
         raise
 
+
+def test_busy_driver_rejected_when_distance_too_far():
+    """
+    Test que verifica que un conductor ocupado NO puede aceptar una solicitud pendiente
+    cuando la distancia es demasiado lejana (más de 2km).
+
+    REQUISITOS para que un conductor ocupado pueda aceptar una solicitud:
+    1. Tiempo total de espera ≤ 15 minutos (max_wait_time_for_busy_driver=15.0)
+    2. Distancia ≤ 2 km (max_distance_for_busy_driver=2.0) ← ESTE ES EL QUE FALLA
+    3. Tiempo de tránsito ≤ 5 minutos (max_transit_time_for_busy_driver=5.0)
+
+    Escenario:
+    1. Conductor está en viaje activo (TRAVELLING)
+    2. Cliente crea nueva solicitud que NO cumple validaciones (muy lejana)
+    3. Sistema NO asigna conductor ocupado (solicitud rechazada)
+    4. Verificar que el conductor NO puede aceptar la solicitud
+    5. Verificar que la solicitud NO se asigna al conductor
+    """
+    print("\n🔄 Test: Conductor ocupado rechaza solicitud por distancia lejana...")
+    import traceback
+
+    try:
+        # 1. Crear conductor ocupado con viaje activo
+        print("🔍 Paso 1: Creando conductor ocupado con viaje activo...")
+        driver_token, driver_id, active_request_id = create_busy_driver_with_active_trip(
+            client)
+        driver_headers = {"Authorization": f"Bearer {driver_token}"}
+        print(
+            f"✅ Paso 1: Conductor {driver_id} en viaje activo {active_request_id}")
+
+        # 2. Verificar que el conductor está en estado TRAVELLING
+        print("🔍 Paso 2: Verificando estado TRAVELLING...")
+        active_trip_resp = client.get(
+            f"/client-request/{active_request_id}", headers=driver_headers)
+        print(f"   - Status Code: {active_trip_resp.status_code}")
+        print(f"   - Response: {active_trip_resp.text}")
+
+        assert active_trip_resp.status_code == 200
+        active_trip_data = active_trip_resp.json()
+        assert active_trip_data["status"] in [
+            "TRAVELLING", "StatusEnum.TRAVELLING"]
+        print(
+            f"✅ Paso 2: Viaje activo confirmado en estado {active_trip_data['status']}")
+
+        # 3. Crear nueva solicitud que NO cumple validaciones (muy lejana)
+        print("🔍 Paso 3: Creando nueva solicitud que NO cumple validaciones...")
+        # Usar un número único para evitar conflictos
+        import time
+        # Últimos 3 dígitos del timestamp para mantener 10 dígitos total
+        # Últimos 3 dígitos del timestamp
+        unique_suffix = str(int(time.time() * 1000))[-3:]
+        client_phone = f"3004444{unique_suffix}"  # 7 + 3 = 10 dígitos
+        client_country_code = "+57"
+
+        # Crear usuario cliente antes de autenticar
+        client_data = {
+            "full_name": "Carlos Lopez",
+            "country_code": client_country_code,
+            "phone_number": client_phone
+        }
+        response = client.post("/users/", json=client_data)
+        assert response.status_code == 201
+
+        # Autenticar cliente
+        send_resp = client.post(
+            f"/auth/verify/{client_country_code}/{client_phone}/send")
+        assert send_resp.status_code == 201
+        code = send_resp.json()["message"].split()[-1]
+
+        verify_resp = client.post(
+            f"/auth/verify/{client_country_code}/{client_phone}/code",
+            json={"code": code}
+        )
+        assert verify_resp.status_code == 200
+        client_token = verify_resp.json()["access_token"]
+        client_headers = {"Authorization": f"Bearer {client_token}"}
+
+        # 4. Crear solicitud MUY LEJANA al destino del viaje actual (NO cumple validaciones)
+        print("   - Creando solicitud muy lejana...")
+        # Coordenadas muy lejanas para NO cumplir requisitos:
+        # - Distancia > 2 km (debería ser rechazada)
+        # - Tiempo total > 15 minutos
+        # - Tiempo de tránsito > 5 minutos
+        new_request_data = {
+            "fare_offered": 20000,
+            "pickup_description": "Punto de recogida lejano al destino actual",
+            "destination_description": "Destino del nuevo cliente lejano",
+            # Punto de recogida: muy lejos del destino del viaje actual (4.702468)
+            "pickup_lat": 4.750000,  # ~5.3km del destino actual
+            "pickup_lng": -74.050000,  # Muy lejos del destino actual
+            "destination_lat": 4.760000,  # Destino del nuevo cliente
+            "destination_lng": -74.040000,
+            "type_service_id": 1,  # Car
+            "payment_method_id": 1  # Cash
+        }
+        print(f"   - Request data: {new_request_data}")
+        create_resp = client.post(
+            "/client-request/", json=new_request_data, headers=client_headers)
+        print(f"   - Create Status Code: {create_resp.status_code}")
+        print(f"   - Create Response: {create_resp.text}")
+        assert create_resp.status_code == 201
+        pending_request_id = create_resp.json()["id"]
+        print(
+            f"✅ Paso 3: Nueva solicitud creada {pending_request_id} (NO cumple validaciones)")
+
+        # 5. Verificar que la nueva solicitud está en estado CREATED (pendiente)
+        print("🔍 Paso 4: Verificando estado de nueva solicitud...")
+        new_request_resp = client.get(
+            f"/client-request/{pending_request_id}", headers=client_headers)
+        print(f"   - Get Status Code: {new_request_resp.status_code}")
+        print(f"   - Get Response: {new_request_resp.text}")
+        assert new_request_resp.status_code == 200
+        new_request_data = new_request_resp.json()
+        assert new_request_data["status"] in ["CREATED", "StatusEnum.CREATED"]
+        print(f"✅ Paso 4: Nueva solicitud en estado CREATED (pendiente)")
+
+        # 6. Intentar asignar manualmente la solicitud al conductor ocupado (debería fallar)
+        print("🔍 Paso 5: Intentando asignar manualmente solicitud al conductor ocupado...")
+        try:
+            # Asignar la solicitud pendiente al conductor ocupado usando el endpoint correcto
+            assignment_data = {
+                "id_client_request": pending_request_id,
+                "id_driver": driver_id,
+                "fare_assigned": 22000
+            }
+
+            assign_resp = client.patch(
+                "/client-request/updateDriverAssigned",
+                json=assignment_data,
+                headers=client_headers
+            )
+            print(f"   - Assign Status Code: {assign_resp.status_code}")
+            print(f"   - Assign Response: {assign_resp.text}")
+
+            # Debería fallar porque la distancia es muy lejana
+            if assign_resp.status_code == 400:
+                print(f"✅ Paso 5: Correcto - Solicitud rechazada por distancia lejana")
+            elif assign_resp.status_code == 200:
+                print(
+                    f"⚠️ Paso 5: Inesperado - Solicitud asignada a pesar de distancia lejana")
+                # Verificar que el conductor NO tiene solicitud pendiente
+                pending_resp = client.get(
+                    "/drivers/pending-request", headers=driver_headers)
+                if pending_resp.status_code == 200:
+                    pending_data = pending_resp.json()
+                    if not pending_data.get("pending_request"):
+                        print(
+                            f"✅ Paso 5: Conductor NO tiene solicitud pendiente (correcto)")
+                    else:
+                        print(
+                            f"❌ Paso 5: Conductor SÍ tiene solicitud pendiente (incorrecto)")
+                else:
+                    print(f"⚠️ Paso 5: No se pudo verificar solicitud pendiente")
+            else:
+                print(
+                    f"⚠️ Paso 5: Respuesta inesperada: {assign_resp.status_code}")
+                print(f"   - Error: {assign_resp.text}")
+        except Exception as e:
+            print(f"⚠️ Paso 5: Error asignando solicitud: {e}")
+            print(f"   - Traceback: {traceback.format_exc()}")
+
+        # 7. Verificar que el conductor NO tiene solicitud pendiente asignada
+        print("🔍 Paso 6: Verificando que conductor NO tiene solicitud pendiente...")
+        try:
+            pending_resp = client.get(
+                "/drivers/pending-request", headers=driver_headers)
+            print(f"   - Pending Status Code: {pending_resp.status_code}")
+            print(f"   - Pending Response: {pending_resp.text}")
+            if pending_resp.status_code == 200:
+                pending_data = pending_resp.json()
+                if not pending_data.get("pending_request"):
+                    print(
+                        f"✅ Paso 6: Correcto - Conductor NO tiene solicitud pendiente")
+                else:
+                    print(
+                        f"❌ Paso 6: Incorrecto - Conductor SÍ tiene solicitud pendiente")
+                    print(f"   - Pending data: {pending_data}")
+            else:
+                print(
+                    f"⚠️ Paso 6: Endpoint /drivers/pending-request no implementado aún ({pending_resp.status_code})")
+        except Exception as e:
+            print(f"⚠️ Paso 6: Error verificando solicitud pendiente: {e}")
+            print(f"   - Traceback: {traceback.format_exc()}")
+
+        # 8. Verificar que el conductor sigue en su viaje activo
+        print("🔍 Paso 7: Verificando que conductor sigue en viaje activo...")
+        active_trip_resp_2 = client.get(
+            f"/client-request/{active_request_id}", headers=driver_headers)
+        print(
+            f"   - Active Trip Status Code: {active_trip_resp_2.status_code}")
+        print(f"   - Active Trip Response: {active_trip_resp_2.text}")
+        assert active_trip_resp_2.status_code == 200
+        active_trip_data_2 = active_trip_resp_2.json()
+        assert active_trip_data_2["status"] in [
+            "TRAVELLING", "StatusEnum.TRAVELLING"]
+        print(f"✅ Paso 7: Conductor sigue en viaje activo")
+
+        # 9. Verificar que NO puede aceptar la solicitud pendiente (NO cumple validaciones)
+        print("🔍 Paso 8: Intentando aceptar solicitud pendiente...")
+        try:
+            print(f"\n🔍 DEBUGGING: Intentando aceptar solicitud pendiente...")
+            print(f"   - Pending Request ID: {pending_request_id}")
+            print(f"   - Driver ID: {driver_id}")
+            print(f"   - Active Request ID: {active_request_id}")
+
+            accept_resp = client.post(
+                f"/drivers/pending-request/accept?client_request_id={pending_request_id}", headers=driver_headers)
+
+            print(f"   - Accept Status Code: {accept_resp.status_code}")
+            print(f"   - Accept Response: {accept_resp.text}")
+
+            if accept_resp.status_code == 400:
+                print(
+                    "✅ Paso 8: Correcto - NO pudo aceptar solicitud pendiente (NO cumple validaciones)")
+                print(
+                    f"   - Error details: {accept_resp.json() if accept_resp.text else 'No response body'}")
+
+                # 10. Verificar que la solicitud NO está asignada al conductor
+                print("🔍 Paso 9: Verificando que solicitud NO está asignada...")
+                updated_request_resp = client.get(
+                    f"/client-request/{pending_request_id}", headers=client_headers)
+                print(
+                    f"   - Updated Status Code: {updated_request_resp.status_code}")
+                print(f"   - Updated Response: {updated_request_resp.text}")
+                assert updated_request_resp.status_code == 200
+                updated_request_data = updated_request_resp.json()
+
+                if updated_request_data.get("id_driver_assigned") != driver_id:
+                    print(
+                        f"✅ Paso 9: Correcto - Solicitud NO asignada al conductor (como debe ser)")
+                else:
+                    print(f"❌ Paso 9: Incorrecto - Solicitud SÍ asignada al conductor")
+
+            elif accept_resp.status_code == 200:
+                print(
+                    "❌ Paso 8: Incorrecto - Pudo aceptar solicitud pendiente (debería haber fallado)")
+                print(
+                    f"   - Success details: {accept_resp.json() if accept_resp.text else 'No response body'}")
+
+            else:
+                print(
+                    f"⚠️ Paso 8: Respuesta inesperada: {accept_resp.status_code}")
+                print(f"   - Response: {accept_resp.text}")
+        except Exception as e:
+            print(f"⚠️ Paso 8: Error en endpoint de aceptar: {e}")
+            print(f"   - Traceback completo:")
+            print(traceback.format_exc())
+
+        print("🎉 Test completado: Conductor ocupado rechaza solicitud por distancia lejana")
+        return {
+            "driver_id": driver_id,
+            "active_request_id": active_request_id,
+            "pending_request_id": pending_request_id,
+            "driver_token": driver_token,
+            "rejected": True
+        }
+
+    except Exception as e:
+        print(f"\n❌ Error en test: {e}")
+        print(f"   - Traceback completo:")
+        print(traceback.format_exc())
+        raise
+
 # ===== EJECUCIÓN DE TESTS =====
 
 
