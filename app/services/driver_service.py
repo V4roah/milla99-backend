@@ -459,10 +459,6 @@ class DriverService:
             if not driver_info:
                 return False
 
-            # Verificar que no tenga ya una solicitud pendiente
-            if driver_info.pending_request_id is not None:
-                return False
-
             # Verificar que la solicitud existe y está disponible
             client_request = self.session.query(ClientRequest).filter(
                 ClientRequest.id == client_request_id,
@@ -470,6 +466,14 @@ class DriverService:
             ).first()
 
             if not client_request:
+                return False
+
+            # Verificar que la solicitud no esté ya asignada a otro conductor
+            if client_request.id_driver_assigned is not None:
+                return False
+
+            # Verificar que la solicitud no esté ya asignada como pendiente a otro conductor
+            if client_request.assigned_busy_driver_id is not None and client_request.assigned_busy_driver_id != driver_id:
                 return False
 
             # Asignar la solicitud al conductor
@@ -490,89 +494,87 @@ class DriverService:
             print(f"Error accepting pending request: {e}")
             return False
 
-    def complete_pending_request(self, driver_id: UUID) -> bool:
+    def complete_pending_request(self, user_id: UUID) -> bool:
         """
         Completa la solicitud pendiente de un conductor (cuando termina su viaje actual)
         """
         try:
-            # Obtener el conductor
+            print(f"DEBUG: Completing pending request for user {user_id}")
             driver_info = self.session.query(DriverInfo).filter(
-                DriverInfo.user_id == driver_id
+                DriverInfo.user_id == user_id
             ).first()
-
+            print(
+                f"DEBUG: Driver pending_request_id: {driver_info.pending_request_id if driver_info else None}")
             if not driver_info or driver_info.pending_request_id is None:
+                print(f"DEBUG: No pending request for user {user_id}")
                 return False
-
-            # Obtener la solicitud pendiente
             client_request = self.session.query(ClientRequest).filter(
                 ClientRequest.id == driver_info.pending_request_id
             ).first()
-
+            print(
+                f"DEBUG: Found client request: {client_request.id if client_request else None}")
             if not client_request:
+                print(
+                    f"DEBUG: Client request {driver_info.pending_request_id} not found")
                 return False
-
-            # Cambiar la solicitud de pendiente a asignada
-            client_request.id_driver_assigned = driver_id
+            client_request.id_driver_assigned = user_id
             client_request.status = StatusEnum.ACCEPTED
-
-            # Limpiar los campos de conductor ocupado
             client_request.assigned_busy_driver_id = None
             client_request.estimated_pickup_time = None
             client_request.driver_current_trip_remaining_time = None
             client_request.driver_transit_time = None
-
-            # Limpiar la solicitud pendiente del conductor
             driver_info.pending_request_id = None
             driver_info.pending_request_accepted_at = None
-
             self.session.add(driver_info)
             self.session.add(client_request)
             self.session.commit()
-
+            print(
+                f"DEBUG: Pending request completed and cleaned for user {user_id}")
+            print(
+                f"DEBUG: After complete - driver_info.pending_request_id: {driver_info.pending_request_id}")
+            print(
+                f"DEBUG: After complete - client_request.id_driver_assigned: {client_request.id_driver_assigned}, status: {client_request.status}")
             return True
-
         except Exception as e:
             self.session.rollback()
             print(f"Error completing pending request: {e}")
             return False
 
-    def cancel_pending_request(self, driver_id: UUID) -> bool:
+    def cancel_pending_request(self, user_id: UUID) -> bool:
         """
         Cancela la solicitud pendiente de un conductor
         """
         try:
-            # Obtener el conductor
+            print(f"DEBUG: Canceling pending request for user {user_id}")
             driver_info = self.session.query(DriverInfo).filter(
-                DriverInfo.user_id == driver_id
+                DriverInfo.user_id == user_id
             ).first()
-
+            print(
+                f"DEBUG: Driver pending_request_id before cancel: {driver_info.pending_request_id if driver_info else None}")
             if not driver_info or driver_info.pending_request_id is None:
+                print(
+                    f"DEBUG: No pending request to cancel for user {user_id}")
                 return False
-
-            # Obtener la solicitud pendiente
             client_request = self.session.query(ClientRequest).filter(
                 ClientRequest.id == driver_info.pending_request_id
             ).first()
-
+            print(
+                f"DEBUG: Client request before cancel: {client_request.id if client_request else None}")
             if not client_request:
+                print(
+                    f"DEBUG: No client request found to cancel for user {user_id}")
                 return False
-
-            # Limpiar los campos de conductor ocupado
             client_request.assigned_busy_driver_id = None
             client_request.estimated_pickup_time = None
             client_request.driver_current_trip_remaining_time = None
             client_request.driver_transit_time = None
-
-            # Limpiar la solicitud pendiente del conductor
             driver_info.pending_request_id = None
             driver_info.pending_request_accepted_at = None
-
             self.session.add(driver_info)
             self.session.add(client_request)
             self.session.commit()
-
+            print(f"DEBUG: Pending request canceled for user {user_id}")
             return True
-
         except Exception as e:
             self.session.rollback()
             print(f"Error canceling pending request: {e}")
@@ -582,27 +584,28 @@ class DriverService:
         """
         Obtiene el estado completo de un conductor
         """
+        print(f"DEBUG: Getting status for driver {driver_id}")
         driver_info = self.session.query(DriverInfo).filter(
             DriverInfo.user_id == driver_id
         ).first()
-
+        print(f"DEBUG: Driver info: {driver_info}")
         if not driver_info:
+            print(f"DEBUG: Driver not found: {driver_id}")
             return {"status": "not_found"}
-
-        # Verificar si está en viaje activo
         active_request = self.session.query(ClientRequest).filter(
             ClientRequest.id_driver_assigned == driver_id,
-            ClientRequest.status.in_(
-                [StatusEnum.ON_THE_WAY, StatusEnum.ARRIVED, StatusEnum.TRAVELLING])
+            ClientRequest.status.in_([
+                StatusEnum.ON_THE_WAY, StatusEnum.ARRIVED, StatusEnum.TRAVELLING])
         ).first()
-
-        # Verificar si tiene solicitud pendiente
+        print(
+            f"DEBUG: Active request: {active_request.id if active_request else None}")
         pending_request = None
         if driver_info.pending_request_id:
             pending_request = self.session.query(ClientRequest).filter(
                 ClientRequest.id == driver_info.pending_request_id
             ).first()
-
+        print(
+            f"DEBUG: Pending request: {pending_request.id if pending_request else None}")
         status = "available"
         if active_request:
             if pending_request:
@@ -611,7 +614,7 @@ class DriverService:
                 status = "busy_available"
         elif pending_request:
             status = "pending_only"
-
+        print(f"DEBUG: Status for driver {driver_id}: {status}")
         return {
             "status": status,
             "active_request": active_request.id if active_request else None,
@@ -619,24 +622,30 @@ class DriverService:
             "pending_request_accepted_at": driver_info.pending_request_accepted_at
         }
 
-    def get_driver_pending_request(self, driver_id: UUID) -> Optional[Dict]:
+    def get_driver_pending_request(self, user_id: UUID) -> Optional[Dict]:
         """
         Obtiene los detalles de la solicitud pendiente de un conductor
         """
+        print(
+            f"DEBUG: get_driver_pending_request called for user {user_id}")
         driver_info = self.session.query(DriverInfo).filter(
-            DriverInfo.user_id == driver_id
+            DriverInfo.user_id == user_id
         ).first()
-
+        print(
+            f"DEBUG: Driver {user_id} - pending_request_id: {driver_info.pending_request_id if driver_info else None}")
         if not driver_info or driver_info.pending_request_id is None:
+            print(f"DEBUG: No pending request for user {user_id}")
             return None
-
         client_request = self.session.query(ClientRequest).filter(
             ClientRequest.id == driver_info.pending_request_id
         ).first()
-
+        print(
+            f"DEBUG: Found pending request: {client_request.id if client_request else None}")
         if not client_request:
+            print(
+                f"DEBUG: Pending request {driver_info.pending_request_id} not found")
             return None
-
+        print(f"DEBUG: Returning pending request data for user {user_id}")
         return {
             "request_id": str(client_request.id),
             "client_id": str(client_request.id_client),

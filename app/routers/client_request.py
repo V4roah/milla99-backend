@@ -38,6 +38,8 @@ from datetime import datetime, timedelta
 from app.utils.geo import wkb_to_coords
 from uuid import UUID
 from app.core.dependencies.auth import get_current_user
+import pytz
+COLOMBIA_TZ = pytz.timezone("America/Bogota")
 
 bearer_scheme = HTTPBearer()
 
@@ -614,6 +616,8 @@ def assign_driver(
 ):
     try:
         import traceback as tb
+        from app.models.client_request import ClientRequest
+
         # 1. Obtener la solicitud
         client_request = session.query(ClientRequest).filter(
             ClientRequest.id == request_data.id_client_request).first()
@@ -651,13 +655,55 @@ def assign_driver(
                 detail="El conductor no tiene un vehículo compatible con el tipo de servicio solicitado"
             )
 
-        # Si pasa la validación, asignar el conductor
-        return assign_driver_service(
-            session,
-            request_data.id_client_request,
-            request_data.id_driver,
-            request_data.fare_assigned
-        )
+        # Verificar si el conductor está ocupado (tiene un viaje activo)
+        from app.models.driver_info import DriverInfo
+
+        # Buscar si el conductor tiene un viaje activo
+        active_request = session.query(ClientRequest).filter(
+            ClientRequest.id_driver_assigned == request_data.id_driver,
+            ClientRequest.status.in_([
+                "ON_THE_WAY", "ARRIVED", "TRAVELLING"
+            ])
+        ).first()
+
+        if active_request:
+            # El conductor está ocupado, usar assign_busy_driver
+            from app.services.client_requests_service import assign_busy_driver, calculate_busy_driver_total_time, get_busy_driver_config
+            from datetime import datetime, timedelta
+
+            # Calcular tiempos estimados
+            config = get_busy_driver_config(session)
+            remaining_time = 5.0  # 5 minutos estimados para terminar viaje actual
+            transit_time = 3.0    # 3 minutos estimados para llegar al nuevo cliente
+
+            # Calcular tiempo estimado de recogida
+            estimated_pickup_time = datetime.now(
+                COLOMBIA_TZ) + timedelta(minutes=remaining_time + transit_time)
+
+            success = assign_busy_driver(
+                session,
+                request_data.id_client_request,
+                request_data.id_driver,
+                estimated_pickup_time,
+                remaining_time,
+                transit_time
+            )
+
+            if success:
+                return {"success": True, "message": "Conductor ocupado asignado correctamente como pendiente"}
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No se pudo asignar el conductor ocupado"
+                )
+        else:
+            # El conductor está disponible, usar assign_driver_service normal
+            return assign_driver_service(
+                session,
+                request_data.id_client_request,
+                request_data.id_driver,
+                request_data.fare_assigned
+            )
     except HTTPException as e:
         print("[HTTPException]", e.detail)
         print(tb.format_exc())

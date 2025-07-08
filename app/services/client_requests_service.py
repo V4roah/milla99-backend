@@ -215,7 +215,7 @@ async def get_nearby_client_requests_service(driver_lat, driver_lng, session: Se
             "id": str(cr.id),
             "id_client": str(cr.id_client),
             "fare_offered": cr.fare_offered,
-            "fair_price": int(fair_price) if fair_price is not None else None, 
+            "fair_price": int(fair_price) if fair_price is not None else None,
             "pickup_description": cr.pickup_description,
             "destination_description": cr.destination_description,
             "status": cr.status,
@@ -2053,59 +2053,37 @@ def validate_busy_driver(driver_info: DriverInfo, config: Dict[str, float]) -> b
     return True
 
 
-def assign_busy_driver(
-    session: Session,
-    client_request_id: UUID,
-    driver_id: UUID,
-    estimated_pickup_time: datetime,
-    remaining_time: float,
-    transit_time: float
-) -> bool:
-    """
-    Asigna un conductor ocupado a una solicitud
-    """
-    try:
-        # Obtener la solicitud
-        client_request = session.query(ClientRequest).filter(
-            ClientRequest.id == client_request_id
-        ).first()
-
-        if not client_request:
-            return False
-
-        # Obtener el conductor
-        driver_info = session.query(DriverInfo).filter(
-            DriverInfo.user_id == driver_id
-        ).first()
-
-        if not driver_info:
-            return False
-
-        # Validar que el conductor puede tomar la solicitud
-        config = get_busy_driver_config(session)
-        if not validate_busy_driver(driver_info, config):
-            return False
-
-        # Actualizar la solicitud
+def assign_busy_driver(session, client_request_id, driver_id, estimated_pickup_time, remaining_time, transit_time):
+    print(
+        f"DEBUG: assign_busy_driver called with client_request_id={client_request_id}, driver_id={driver_id}")
+    from app.models.client_request import ClientRequest
+    from app.models.driver_info import DriverInfo
+    client_request = session.query(ClientRequest).filter(
+        ClientRequest.id == client_request_id).first()
+    driver_info = session.query(DriverInfo).filter(
+        DriverInfo.user_id == driver_id).first()
+    print(
+        f"DEBUG: Before assignment - driver_info.id={driver_info.id if driver_info else None}, driver_info.user_id={driver_info.user_id if driver_info else None}, driver_info.pending_request_id={driver_info.pending_request_id if driver_info else None}")
+    print(
+        f"DEBUG: Before assignment - client_request.id={client_request.id if client_request else None}, client_request.assigned_busy_driver_id={client_request.assigned_busy_driver_id if client_request else None}")
+    if client_request and driver_info:
         client_request.assigned_busy_driver_id = driver_id
         client_request.estimated_pickup_time = estimated_pickup_time
         client_request.driver_current_trip_remaining_time = remaining_time
         client_request.driver_transit_time = transit_time
-
-        # Actualizar el conductor
         driver_info.pending_request_id = client_request_id
-        driver_info.pending_request_accepted_at = datetime.now(COLOMBIA_TZ)
-
         session.add(client_request)
         session.add(driver_info)
         session.commit()
-
-        return True
-
-    except Exception as e:
-        logger.error(f"Error assigning busy driver: {e}")
-        session.rollback()
-        return False
+        session.refresh(driver_info)
+        session.refresh(client_request)
+        print(
+            f"DEBUG: After assignment - driver_info.id={driver_info.id}, driver_info.user_id={driver_info.user_id}, driver_info.pending_request_id={driver_info.pending_request_id}")
+        print(
+            f"DEBUG: After assignment - client_request.id={client_request.id}, client_request.assigned_busy_driver_id={client_request.assigned_busy_driver_id}")
+    else:
+        print(f"DEBUG: assign_busy_driver - client_request or driver_info not found")
+    return True
 
 
 def get_eta_service(session, client_request_id):

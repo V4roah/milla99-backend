@@ -491,18 +491,9 @@ async def accept_pending_request(
         # Obtener el user_id desde el token
         user_id = request.state.user_id
 
-        # Buscar el driver_info correspondiente a este usuario
-        driver_info = session.exec(select(DriverInfo).where(
-            DriverInfo.user_id == user_id)).scalars().first()
-        if not driver_info:
-            raise HTTPException(
-                status_code=404, detail="No se encontró información de conductor para este usuario.")
-
-        driver_id = driver_info.id
-
-        # Usar el servicio para aceptar la solicitud pendiente
+        # Usar el servicio para completar la solicitud pendiente
         service = DriverService(session)
-        success = service.accept_pending_request(driver_id, client_request_id)
+        success = service.complete_pending_request(user_id)
 
         if success:
             return {"message": "Solicitud pendiente aceptada correctamente"}
@@ -544,18 +535,9 @@ async def complete_pending_request(
         # Obtener el user_id desde el token
         user_id = request.state.user_id
 
-        # Buscar el driver_info correspondiente a este usuario
-        driver_info = session.exec(select(DriverInfo).where(
-            DriverInfo.user_id == user_id)).scalars().first()
-        if not driver_info:
-            raise HTTPException(
-                status_code=404, detail="No se encontró información de conductor para este usuario.")
-
-        driver_id = driver_info.id
-
         # Usar el servicio para completar la solicitud pendiente
         service = DriverService(session)
-        success = service.complete_pending_request(driver_id)
+        success = service.complete_pending_request(user_id)
 
         if success:
             return {"message": "Solicitud pendiente completada correctamente"}
@@ -597,18 +579,9 @@ async def cancel_pending_request(
         # Obtener el user_id desde el token
         user_id = request.state.user_id
 
-        # Buscar el driver_info correspondiente a este usuario
-        driver_info = session.exec(select(DriverInfo).where(
-            DriverInfo.user_id == user_id)).scalars().first()
-        if not driver_info:
-            raise HTTPException(
-                status_code=404, detail="No se encontró información de conductor para este usuario.")
-
-        driver_id = driver_info.id
-
         # Usar el servicio para cancelar la solicitud pendiente
         service = DriverService(session)
-        success = service.cancel_pending_request(driver_id)
+        success = service.cancel_pending_request(user_id)
 
         if success:
             return {"message": "Solicitud pendiente cancelada correctamente"}
@@ -650,18 +623,9 @@ async def get_pending_request(
         # Obtener el user_id desde el token
         user_id = request.state.user_id
 
-        # Buscar el driver_info correspondiente a este usuario
-        driver_info = session.exec(select(DriverInfo).where(
-            DriverInfo.user_id == user_id)).scalars().first()
-        if not driver_info:
-            raise HTTPException(
-                status_code=404, detail="No se encontró información de conductor para este usuario.")
-
-        driver_id = driver_info.id
-
         # Usar el servicio para obtener la solicitud pendiente
         service = DriverService(session)
-        pending_request = service.get_driver_pending_request(driver_id)
+        pending_request = service.get_driver_pending_request(user_id)
 
         return {"pending_request": pending_request}
 

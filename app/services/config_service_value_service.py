@@ -2,6 +2,7 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 from sqlmodel import Session, select
 from app.models.config_service_value import ConfigServiceValue, FareCalculationResponse
+from app.models.project_settings import ProjectSettings
 import requests
 from app.utils.geo_utils import get_time_and_distance_from_google
 
@@ -150,3 +151,13 @@ class ConfigServiceValueService:
         except Exception as e:
             print(f"Error al calcular el valor total: {str(e)}")
             return None
+
+    def get_max_busy_driver_time(self) -> float:
+        """
+        Obtiene el tiempo máximo configurado para conductores ocupados desde project_settings
+        """
+        settings = self.session.exec(select(ProjectSettings)).first()
+        if not settings:
+            return 15.0  # Valor por defecto
+
+        return settings.max_wait_time_for_busy_driver or 15.0

@@ -39,8 +39,8 @@ class ClientRequestCreate(SQLModel):
 class StatusEnum(str, enum.Enum):
     CREATED = "CREATED"
     ACCEPTED = "ACCEPTED"
-    ON_THE_WAY = "ON_THE_WAY"
     ARRIVED = "ARRIVED"
+    ON_THE_WAY = "ON_THE_WAY"
     TRAVELLING = "TRAVELLING"
     FINISHED = "FINISHED"
     PAID = "PAID"
