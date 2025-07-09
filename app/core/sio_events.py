@@ -9,9 +9,9 @@ from app.core.db import get_session
 # Configura Redis como message manager
 mgr = socketio.AsyncRedisManager('redis://localhost:6379/0')
 # sio = socketio.AsyncServer(
-#     async_mode='asgi',
+     async_mode='asgi',
 #     client_manager=mgr,
-#     cors_allowed_origins='*'
+     cors_allowed_origins='*'
 # )
 sio = socketio.AsyncServer(async_mode='asgi')
 
