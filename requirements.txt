@@ -61,7 +61,8 @@ locust==2.24.0
 MarkupSafe==3.0.2
 msgpack==1.1.1
 multidict==6.4.3
-mysql-connector-python==9.3.0
+# mysql-connector-python==9.3.0
+psycopg2-binary==2.9.9
 numpy==2.2.5
 packaging==25.0
 passlib==1.7.4
