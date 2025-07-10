@@ -113,32 +113,66 @@ def test_client_request_pending_status():
     from sqlalchemy import select, update
 
     with Session(engine) as session:
+        print(f"\n🔍 DEBUG: Buscando posición para conductor {driver_id}")
+
         # Buscar la posición existente del conductor
-        existing_position = session.exec(
-            select(DriverPosition).where(DriverPosition.id_driver == driver_id)
-        ).first()
+        try:
+            print(f"   - Ejecutando consulta para buscar posición...")
+            existing_position = session.exec(
+                select(DriverPosition).where(
+                    DriverPosition.id_driver == driver_id)
+            ).one()
 
-        if existing_position:
-            # Actualizar la posición para que esté muy cerca del cliente (cumplir validaciones)
-            # Usar coordenadas muy cercanas al cliente para que pase las validaciones de distancia
-            from sqlalchemy import func
-
-            # Eliminar la posición existente y crear una nueva
-            session.delete(existing_position)
-            session.commit()
-
-            # Crear nueva posición cerca del cliente
-            new_position = DriverPosition(
-                id_driver=driver_id,
-                position=func.ST_GeomFromText(
-                    'POINT(-74.073170 4.718136)', 4326)
-            )
-            session.add(new_position)
-            session.commit()
+            print(f"   - Tipo de existing_position: {type(existing_position)}")
+            print(f"   - existing_position: {existing_position}")
             print(
-                f"✅ Posición actualizada para conductor {driver_id} (cerca del cliente)")
-        else:
-            print(f"⚠️ No se encontró posición para conductor {driver_id}")
+                f"   - ¿Es Row?: {hasattr(existing_position, '_sa_instance_state')}")
+
+            # Verificar si es un objeto mapeado o un Row
+            if hasattr(existing_position, '_sa_instance_state'):
+                print(f"   - ✅ Es objeto mapeado, actualizando posición...")
+                # Actualizar la posición existente en lugar de eliminar y crear
+                from sqlalchemy import func
+                existing_position.position = func.ST_GeomFromText(
+                    'POINT(-74.073170 4.718136)', 4326)
+                session.commit()
+                print(
+                    f"   - ✅ Posición actualizada para conductor {driver_id}")
+            else:
+                print(f"   - ❌ Es Row, no se puede actualizar directamente")
+                # Si es un Row, usar UPDATE directo
+                from sqlalchemy import func, update
+                stmt = update(DriverPosition).where(
+                    DriverPosition.id_driver == driver_id
+                ).values(
+                    position=func.ST_GeomFromText(
+                        'POINT(-74.073170 4.718136)', 4326)
+                )
+                session.exec(stmt)
+                session.commit()
+                print(f"   - ✅ Posición actualizada con UPDATE directo")
+
+        except Exception as e:
+            print(f"   - ❌ Error: {e}")
+            print(f"   - Tipo de error: {type(e)}")
+            print(f"   - Intentando crear nueva posición...")
+
+            # Crear nueva posición si no existe
+            try:
+                from sqlalchemy import func
+                new_position = DriverPosition(
+                    id_driver=driver_id,
+                    position=func.ST_GeomFromText(
+                        'POINT(-74.073170 4.718136)', 4326)
+                )
+                session.add(new_position)
+                session.commit()
+                print(
+                    f"   - ✅ Nueva posición creada para conductor {driver_id}")
+            except Exception as e2:
+                print(f"   - ❌ Error creando nueva posición: {e2}")
+                print(f"   - Posición ya existe, saltando...")
+                session.rollback()
 
     # Simular que el conductor está ocupado (en viaje activo)
     # Crear otra solicitud y ponerla en estado TRAVELLING
