@@ -343,6 +343,53 @@ class TestChatSystem:
 
             return client_request
 
+    def _create_test_pending_request(self, client_id: UUID, driver_id: UUID) -> ClientRequest:
+        """Crea una solicitud de viaje en estado PENDING para pruebas"""
+        # Obtener el usuario cliente para autenticarlo
+        with Session(engine) as session:
+            client_user = session.exec(
+                select(User).where(User.id == client_id)
+            ).first()
+
+        # Autenticar como cliente
+        client_token = self._authenticate_user(
+            client, client_user.phone_number)
+        client_headers = {"Authorization": f"Bearer {client_token}"}
+
+        # Crear solicitud usando el endpoint de la API
+        request_data = {
+            "fare_offered": 20000,
+            "pickup_description": "Test pickup pending",
+            "destination_description": "Test destination pending",
+            "pickup_lat": 4.718136,
+            "pickup_lng": -74.07317,
+            "destination_lat": 4.702468,
+            "destination_lng": -74.076542,
+            "type_service_id": 1,  # Car
+            "payment_method_id": 1  # Cash
+        }
+
+        response = client.post(
+            "/client-request/", json=request_data, headers=client_headers)
+        assert response.status_code == 201
+        client_request_data = response.json()
+
+        # Obtener la solicitud de la base de datos
+        with Session(engine) as session:
+            client_request = session.exec(
+                select(ClientRequest).where(
+                    ClientRequest.id == UUID(client_request_data["id"]))
+            ).first()
+
+            # Asignar el conductor manualmente y poner en estado PENDING
+            client_request.id_driver_assigned = driver_id
+            client_request.status = "PENDING"
+            session.add(client_request)
+            session.commit()
+            session.refresh(client_request)
+
+            return client_request
+
     def _create_test_messages(self, client_id: UUID, driver_id: UUID, client_request_id: UUID):
         """Crea mensajes de prueba"""
         print(f"\n🔍 DEBUG: Creando mensajes de prueba")
@@ -642,3 +689,73 @@ class TestChatSystem:
         messages = response.json()
         assert len(messages) > 0
         print(f"✅ Conversación accesible durante viaje activo")
+
+    def test_chat_active_during_pending_request(self, client: TestClient):
+        """Test que verifica que el chat funciona correctamente durante solicitudes en estado PENDING"""
+        print(f"\n🧪 INICIANDO TEST: test_chat_active_during_pending_request")
+
+        # Crear usuarios y solicitud pendiente
+        client_user, driver_user = self._create_test_users()
+        client_request = self._create_test_pending_request(
+            client_user.id, driver_user.id)
+
+        # Guardar el ID para usarlo después
+        client_request_id = client_request.id
+
+        # Verificar que la solicitud está en estado PENDING
+        with Session(engine) as session:
+            client_request = session.exec(
+                select(ClientRequest).where(
+                    ClientRequest.id == client_request_id)
+            ).first()
+            assert client_request.status == "PENDING"
+            print(f"✅ Solicitud en estado PENDING confirmada")
+
+        # Crear algunos mensajes de chat
+        self._create_test_messages(
+            client_user.id, driver_user.id, client_request_id)
+
+        # Verificar que los mensajes existen
+        with Session(engine) as session:
+            messages = session.exec(
+                select(ChatMessage).where(
+                    ChatMessage.client_request_id == client_request_id)
+            ).all()
+            assert len(messages) == 2
+            print(f"✅ Mensajes creados: {len(messages)}")
+
+        # Autenticar como cliente
+        client_token = self._authenticate_user(
+            client, client_user.phone_number)
+        client_headers = {"Authorization": f"Bearer {client_token}"}
+
+        # Enviar mensaje durante estado PENDING
+        message_data = {
+            "receiver_id": str(driver_user.id),
+            "client_request_id": str(client_request_id),
+            "message": "Hola conductor, ¿cuándo llegas?"
+        }
+
+        response = client.post(
+            "/chat/send", json=message_data, headers=client_headers)
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["message"] == "Hola conductor, ¿cuándo llegas?"
+        assert data["sender_id"] == str(client_user.id)
+        assert data["receiver_id"] == str(driver_user.id)
+        assert data["client_request_id"] == str(client_request_id)
+        assert data["status"] == "SENT"
+        assert data["is_read"] == False
+
+        print(f"✅ Mensaje enviado exitosamente durante estado PENDING")
+
+        # Obtener conversación
+        conversation_response = client.get(
+            f"/chat/conversation/{client_request_id}", headers=client_headers)
+
+        assert conversation_response.status_code == 200
+        conversation_data = conversation_response.json()
+        assert len(conversation_data) >= 3  # Los 2 originales + el nuevo
+        print(
+            f"✅ Conversación obtenida durante estado PENDING: {len(conversation_data)} mensajes")

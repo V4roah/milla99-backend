@@ -148,3 +148,203 @@ def test_cash_payment_transaction_flow():
         assert company_account is not None
         expected_company_commission = int(fare_assigned * Decimal('0.04'))
         assert company_account.income == expected_company_commission
+
+
+def test_pending_request_transaction_flow():
+    """
+    Prueba el flujo de transacciones para solicitudes en estado PENDING
+    con precio negociado.
+    """
+    # 1. Crear conductor ocupado con viaje activo
+    driver_phone = "3010000011"
+    driver_country_code = "+57"
+    driver_token, driver_id = create_and_approve_driver(
+        client, driver_phone, driver_country_code)
+    driver_headers = {"Authorization": f"Bearer {driver_token}"}
+    
+    # 2. Crear solicitud para ocupar al conductor
+    client_phone = "3004444466"
+    client_country_code = "+57"
+    
+    # Autenticar cliente
+    send_resp = client.post(f"/auth/verify/{client_country_code}/{client_phone}/send")
+    assert send_resp.status_code == 201
+    code = send_resp.json()["message"].split()[-1]
+    
+    verify_resp = client.post(
+        f"/auth/verify/{client_country_code}/{client_phone}/code",
+        json={"code": code}
+    )
+    assert verify_resp.status_code == 200
+    client_token = verify_resp.json()["access_token"]
+    client_headers = {"Authorization": f"Bearer {client_token}"}
+    
+    # Crear solicitud para ocupar al conductor
+    busy_request_data = {
+        "fare_offered": 15000,
+        "pickup_description": "Chapinero",
+        "destination_description": "Usaquén",
+        "pickup_lat": 4.650000,
+        "pickup_lng": -74.050000,
+        "destination_lat": 4.700000,
+        "destination_lng": -74.100000,
+        "type_service_id": 1,
+        "payment_method_id": 1
+    }
+    busy_response = client.post(
+        "/client-request/", json=busy_request_data, headers=client_headers)
+    assert busy_response.status_code == 201
+    busy_request_id = busy_response.json()["id"]
+    
+    # Asignar conductor y poner en TRAVELLING
+    assign_busy_data = {
+        "id_client_request": busy_request_id,
+        "id_driver": driver_id,
+        "fare_assigned": 15000
+    }
+    assign_busy_resp = client.patch(
+        "/client-request/updateDriverAssigned", json=assign_busy_data, headers=client_headers)
+    assert assign_busy_resp.status_code == 200
+    
+    status_data = {
+        "id_client_request": busy_request_id,
+        "status": "TRAVELLING"
+    }
+    status_resp = client.patch(
+        "/client-request/updateStatusByDriver", json=status_data, headers=driver_headers)
+    assert status_resp.status_code == 200
+    
+    # 3. Crear solicitud pendiente con precio negociado
+    client2_phone = "3004444467"
+    client2_country_code = "+57"
+    
+    # Autenticar segundo cliente
+    send_resp2 = client.post(f"/auth/verify/{client2_country_code}/{client2_phone}/send")
+    assert send_resp2.status_code == 201
+    code2 = send_resp2.json()["message"].split()[-1]
+    
+    verify_resp2 = client.post(
+        f"/auth/verify/{client2_country_code}/{client2_phone}/code",
+        json={"code": code2}
+    )
+    assert verify_resp2.status_code == 200
+    client2_token = verify_resp2.json()["access_token"]
+    client2_headers = {"Authorization": f"Bearer {client2_token}"}
+    
+    # Crear solicitud pendiente
+    pending_request_data = {
+        "fare_offered": 20000,  # Precio base
+        "pickup_description": "Cerca del destino del viaje actual",
+        "destination_description": "Destino cercano",
+        "pickup_lat": 4.702468,
+        "pickup_lng": -74.109776,
+        "destination_lat": 4.708468,
+        "destination_lng": -74.105776,
+        "type_service_id": 1,
+        "payment_method_id": 1
+    }
+    pending_response = client.post(
+        "/client-request/", json=pending_request_data, headers=client2_headers)
+    assert pending_response.status_code == 201
+    pending_request_id = pending_response.json()["id"]
+    
+    # 4. Asignar conductor ocupado a la solicitud pendiente
+    assign_pending_data = {
+        "id_client_request": pending_request_id,
+        "id_driver": driver_id,
+        "fare_assigned": 20000
+    }
+    assign_pending_resp = client.patch(
+        "/client-request/updateDriverAssigned", json=assign_pending_data, headers=client2_headers)
+    assert assign_pending_resp.status_code == 200
+    
+    # Verificar que está en estado PENDING
+    detail_resp = client.get(
+        f"/client-request/{pending_request_id}", headers=client2_headers)
+    assert detail_resp.status_code == 200
+    detail_data = detail_resp.json()
+    assert detail_data["status"] == str(StatusEnum.PENDING)
+    
+    # 5. Conductor hace oferta de precio
+    offer_data = {
+        "client_request_id": pending_request_id,
+        "offered_price": 25000  # Precio negociado
+    }
+    offer_resp = client.post(
+        "/drivers/pending-request/offer-price", json=offer_data, headers=driver_headers)
+    assert offer_resp.status_code == 200
+    
+    # 6. Completar solicitud pendiente con precio negociado
+    complete_data = {
+        "client_request_id": pending_request_id,
+        "negotiated_price": 25000
+    }
+    complete_resp = client.post(
+        "/drivers/pending-request/complete", json=complete_data, headers=driver_headers)
+    assert complete_resp.status_code == 200
+    
+    # 7. Completar flujo del viaje pendiente
+    status_flow = ["ON_THE_WAY", "ARRIVED", "TRAVELLING", "FINISHED", "PAID"]
+    for status in status_flow:
+        status_data = {
+            "id_client_request": pending_request_id,
+            "status": status
+        }
+        status_resp = client.patch(
+            "/client-request/updateStatusByDriver",
+            json=status_data,
+            headers=driver_headers
+        )
+        assert status_resp.status_code == 200
+    
+    # 8. Verificar transacciones con precio negociado
+    negotiated_price = 25000
+    with Session(engine) as session:
+        # Verificar transacción de ingreso del conductor (85% del precio negociado)
+        driver_income = session.exec(
+            select(Transaction).where(
+                Transaction.client_request_id == UUID(str(pending_request_id)),
+                Transaction.user_id == UUID(str(driver_id)),
+                Transaction.type == TransactionType.SERVICE,
+                Transaction.income != None
+            )
+        ).first()
+        assert driver_income is not None
+        expected_income = int(negotiated_price * Decimal('0.85'))
+        assert driver_income.income == expected_income
+        
+        # Verificar transacción de comisión del conductor (10% del precio negociado)
+        driver_commission = session.exec(
+            select(Transaction).where(
+                Transaction.client_request_id == UUID(str(pending_request_id)),
+                Transaction.user_id == UUID(str(driver_id)),
+                Transaction.type == TransactionType.COMMISSION,
+                Transaction.expense != None
+            )
+        ).first()
+        assert driver_commission is not None
+        expected_commission = int(negotiated_price * Decimal('0.10'))
+        assert driver_commission.expense == expected_commission
+        
+        # Verificar ahorros del conductor (1% del precio negociado)
+        driver_savings = session.exec(
+            select(DriverSavings).where(
+                DriverSavings.user_id == UUID(str(driver_id))
+            )
+        ).first()
+        assert driver_savings is not None
+        expected_savings = int(negotiated_price * Decimal('0.01'))
+        assert driver_savings.mount == expected_savings
+        
+        # Verificar comisión de la empresa (4% del precio negociado)
+        company_account = session.exec(
+            select(CompanyAccount).where(
+                CompanyAccount.client_request_id == UUID(str(pending_request_id)),
+                CompanyAccount.type == "SERVICE"
+            )
+        ).first()
+        assert company_account is not None
+        expected_company_commission = int(negotiated_price * Decimal('0.04'))
+        assert company_account.income == expected_company_commission
+    
+    print("✅ Test completado: Transacciones con precio negociado en solicitudes PENDING")

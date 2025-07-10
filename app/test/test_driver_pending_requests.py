@@ -289,6 +289,29 @@ def test_busy_driver_pending_request_validation_rejection():
     print(
         f"✅ Paso 4: Nueva solicitud en estado {new_request_data['status']} (pendiente)")
 
+    # 5.1 Si la solicitud está en CREATED, asignarla al conductor ocupado para que pase a PENDING
+    if new_request_data["status"] in ["CREATED", "StatusEnum.CREATED"]:
+        print("🔍 Paso 4.1: Asignando solicitud al conductor ocupado para que pase a PENDING...")
+        assignment_data = {
+            "id_client_request": pending_request_id,
+            "id_driver": driver_id,
+            "fare_assigned": 22000
+        }
+        assign_resp = client.patch(
+            "/client-request/updateDriverAssigned",
+            json=assignment_data,
+            headers=client_headers
+        )
+        assert assign_resp.status_code == 200
+
+        # Verificar que ahora está en estado PENDING
+        updated_request_resp = client.get(
+            f"/client-request/{pending_request_id}", headers=client_headers)
+        assert updated_request_resp.status_code == 200
+        updated_request_data = updated_request_resp.json()
+        assert updated_request_data["status"] == str(StatusEnum.PENDING)
+        print(f"✅ Paso 4.1: Solicitud ahora en estado PENDING")
+
     # 6. Verificar que el conductor tiene solicitud pendiente asignada
     try:
         pending_resp = client.get(
@@ -441,7 +464,7 @@ def test_busy_driver_can_accept_request_when_meets_requirements():
         print(
             f"✅ Paso 3: Nueva solicitud creada {pending_request_id} (cumple validaciones)")
 
-        # 5. Verificar que la nueva solicitud está en estado CREATED (pendiente)
+        # 5. Verificar que la nueva solicitud está en estado CREATED o PENDING (pendiente)
         print("🔍 Paso 4: Verificando estado de nueva solicitud...")
         new_request_resp = client.get(
             f"/client-request/{pending_request_id}", headers=client_headers)
@@ -453,6 +476,30 @@ def test_busy_driver_can_accept_request_when_meets_requirements():
             "CREATED", "PENDING", "StatusEnum.CREATED", "StatusEnum.PENDING"]
         print(
             f"✅ Paso 4: Nueva solicitud en estado {new_request_data['status']} (pendiente)")
+
+        # 5.1 Si la solicitud está en CREATED, asignarla al conductor ocupado para que pase a PENDING
+        if new_request_data["status"] in ["CREATED", "StatusEnum.CREATED"]:
+            print(
+                "🔍 Paso 4.1: Asignando solicitud al conductor ocupado para que pase a PENDING...")
+            assignment_data = {
+                "id_client_request": pending_request_id,
+                "id_driver": driver_id,
+                "fare_assigned": 22000
+            }
+            assign_resp = client.patch(
+                "/client-request/updateDriverAssigned",
+                json=assignment_data,
+                headers=client_headers
+            )
+            assert assign_resp.status_code == 200
+
+            # Verificar que ahora está en estado PENDING
+            updated_request_resp = client.get(
+                f"/client-request/{pending_request_id}", headers=client_headers)
+            assert updated_request_resp.status_code == 200
+            updated_request_data = updated_request_resp.json()
+            assert updated_request_data["status"] == str(StatusEnum.PENDING)
+            print(f"✅ Paso 4.1: Solicitud ahora en estado PENDING")
 
         # 6. Asignar manualmente la solicitud al conductor ocupado (simular asignación automática)
         print("🔍 Paso 5: Asignando manualmente solicitud al conductor ocupado...")
@@ -910,7 +957,7 @@ def test_busy_driver_rejected_when_distance_too_far():
         print(
             f"✅ Paso 3: Nueva solicitud creada {pending_request_id} (NO cumple validaciones)")
 
-        # 5. Verificar que la nueva solicitud está en estado CREATED (pendiente)
+        # 5. Verificar que la nueva solicitud está en estado CREATED (no cumple validaciones)
         print("🔍 Paso 4: Verificando estado de nueva solicitud...")
         new_request_resp = client.get(
             f"/client-request/{pending_request_id}", headers=client_headers)
@@ -919,7 +966,7 @@ def test_busy_driver_rejected_when_distance_too_far():
         assert new_request_resp.status_code == 200
         new_request_data = new_request_resp.json()
         assert new_request_data["status"] in ["CREATED", "StatusEnum.CREATED"]
-        print(f"✅ Paso 4: Nueva solicitud en estado CREATED (pendiente)")
+        print(f"✅ Paso 4: Nueva solicitud en estado CREATED (no cumple validaciones)")
 
         # 6. Intentar asignar manualmente la solicitud al conductor ocupado (debería fallar)
         print("🔍 Paso 5: Intentando asignar manualmente solicitud al conductor ocupado...")

@@ -50,6 +50,147 @@ def test_create_client_request():
     assert response.status_code == 201
     assert "id" in response.json()
 
+    # Verificar que la solicitud se crea en estado CREATED
+    request_data = response.json()
+    assert request_data["status"] == str(StatusEnum.CREATED)
+
+
+def test_client_request_pending_status():
+    """
+    Test que verifica el estado PENDING cuando un conductor ocupado
+    es asignado a una solicitud de cliente.
+    """
+    # Datos del cliente
+    phone_number = "3004444457"
+    country_code = "+57"
+
+    # Enviar código de verificación
+    send_resp = client.post(f"/auth/verify/{country_code}/{phone_number}/send")
+    assert send_resp.status_code == 201
+    code = send_resp.json()["message"].split()[-1]
+
+    # Verificar el código y obtener el token
+    verify_resp = client.post(
+        f"/auth/verify/{country_code}/{phone_number}/code",
+        json={"code": code}
+    )
+    assert verify_resp.status_code == 200
+    token = verify_resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Datos de la solicitud
+    request_data = {
+        "fare_offered": 20000,
+        "pickup_description": "Suba Bogotá",
+        "destination_description": "Santa Rosita Engativa",
+        "pickup_lat": 4.718136,
+        "pickup_lng": -74.073170,
+        "destination_lat": 4.702468,
+        "destination_lng": -74.109776,
+        "type_service_id": 1,  # Car
+        "payment_method_id": 1  # Cash
+    }
+    response = client.post(
+        "/client-request/", json=request_data, headers=headers)
+    assert response.status_code == 201
+    client_request_id = response.json()["id"]
+
+    # Verificar que la solicitud se crea en estado CREATED
+    request_data = response.json()
+    assert request_data["status"] == str(StatusEnum.CREATED)
+
+    # Crear y aprobar conductor
+    driver_phone = "3010000006"
+    driver_country_code = "+57"
+    driver_token, driver_id = create_and_approve_driver(
+        client, driver_phone, driver_country_code)
+    driver_headers = {"Authorization": f"Bearer {driver_token}"}
+
+    # Simular que el conductor está ocupado (en viaje activo)
+    # Crear otra solicitud y ponerla en estado TRAVELLING
+    busy_request_data = {
+        "fare_offered": 15000,
+        "pickup_description": "Chapinero",
+        "destination_description": "Usaquén",
+        "pickup_lat": 4.650000,
+        "pickup_lng": -74.050000,
+        "destination_lat": 4.700000,
+        "destination_lng": -74.100000,
+        "type_service_id": 1,
+        "payment_method_id": 1
+    }
+    busy_response = client.post(
+        "/client-request/", json=busy_request_data, headers=headers)
+    assert busy_response.status_code == 201
+    busy_request_id = busy_response.json()["id"]
+
+    # Asignar conductor a la solicitud ocupada y ponerla en TRAVELLING
+    assign_busy_data = {
+        "id_client_request": busy_request_id,
+        "id_driver": driver_id,
+        "fare_assigned": 15000
+    }
+    assign_busy_resp = client.patch(
+        "/client-request/updateDriverAssigned", json=assign_busy_data, headers=headers)
+    assert assign_busy_resp.status_code == 200
+
+    print(f"\n🔍 DEBUG: Verificando estado de la solicitud ocupada antes de cambiar a TRAVELLING")
+    detail_busy_resp = client.get(
+        f"/client-request/{busy_request_id}", headers=headers)
+    print(f"   - Status code del detalle: {detail_busy_resp.status_code}")
+    print(f"   - Detalle de la solicitud ocupada: {detail_busy_resp.text}")
+
+    print(f"\n🔍 DEBUG: Verificando información del conductor")
+    print(f"   - Driver ID: {driver_id}")
+    print(f"   - Driver token: {driver_token[:50]}...")
+    print(f"   - Driver headers: {driver_headers}")
+
+    # Cambiar estado a TRAVELLING
+    status_data = {
+        "id_client_request": busy_request_id,
+        "status": "TRAVELLING"
+    }
+    print(f"\n🔍 DEBUG: Intentando cambiar estado a TRAVELLING")
+    print(f"   - Request data: {status_data}")
+    print(f"   - Driver headers: {driver_headers}")
+    print(f"   - Busy request ID: {busy_request_id}")
+    print(f"   - Driver ID: {driver_id}")
+
+    status_resp = client.patch(
+        "/client-request/updateStatusByDriver", json=status_data, headers=driver_headers)
+
+    print(f"   - Status code: {status_resp.status_code}")
+    print(f"   - Response text: {status_resp.text}")
+
+    if status_resp.status_code != 200:
+        print(f"❌ ERROR: No se pudo cambiar estado a TRAVELLING")
+        print(f"   - Status code: {status_resp.status_code}")
+        print(f"   - Response: {status_resp.text}")
+        import traceback
+        print(f"   - Traceback: {traceback.format_exc()}")
+
+    assert status_resp.status_code == 200
+
+    # Ahora asignar el conductor ocupado a la solicitud original
+    # Esto debería poner la solicitud en estado PENDING
+    assign_data = {
+        "id_client_request": client_request_id,
+        "id_driver": driver_id,
+        "fare_assigned": 25000
+    }
+    assign_resp = client.patch(
+        "/client-request/updateDriverAssigned", json=assign_data, headers=headers)
+    assert assign_resp.status_code == 200
+    assert assign_resp.json()["success"] is True
+
+    # Verificar que la solicitud está en estado PENDING
+    detail_resp = client.get(
+        f"/client-request/{client_request_id}", headers=headers)
+    assert detail_resp.status_code == 200
+    detail_data = detail_resp.json()
+    assert detail_data["status"] == str(StatusEnum.PENDING)
+    assert detail_data["id_driver_assigned"] == driver_id
+
 
 def test_assign_driver_to_client_request():
     # Datos del cliente
