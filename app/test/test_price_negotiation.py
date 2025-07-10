@@ -607,7 +607,7 @@ def test_complete_pending_request_without_negotiated_price():
     assert busy_response.status_code == 201
     busy_request_id = busy_response.json()["id"]
 
-    # Asignar conductor y poner en TRAVELLING
+    # Asignar conductor a la solicitud
     assign_busy_data = {
         "id_client_request": busy_request_id,
         "id_driver": str(driver_id),  # Convertir UUID a string para JSON
@@ -617,13 +617,30 @@ def test_complete_pending_request_without_negotiated_price():
         "/client-request/updateDriverAssigned", json=assign_busy_data, headers=client_headers)
     assert assign_busy_resp.status_code == 200
 
-    status_data = {
+    # Cambiar estado siguiendo el flujo correcto: ON_THE_WAY -> ARRIVED -> TRAVELLING
+    status_data_on_the_way = {
+        "id_client_request": busy_request_id,
+        "status": "ON_THE_WAY"
+    }
+    status_resp_on_the_way = client.patch(
+        "/client-request/updateStatusByDriver", json=status_data_on_the_way, headers=driver_headers)
+    assert status_resp_on_the_way.status_code == 200
+
+    status_data_arrived = {
+        "id_client_request": busy_request_id,
+        "status": "ARRIVED"
+    }
+    status_resp_arrived = client.patch(
+        "/client-request/updateStatusByDriver", json=status_data_arrived, headers=driver_headers)
+    assert status_resp_arrived.status_code == 200
+
+    status_data_travelling = {
         "id_client_request": busy_request_id,
         "status": "TRAVELLING"
     }
-    status_resp = client.patch(
-        "/client-request/updateStatusByDriver", json=status_data, headers=driver_headers)
-    assert status_resp.status_code == 200
+    status_resp_travelling = client.patch(
+        "/client-request/updateStatusByDriver", json=status_data_travelling, headers=driver_headers)
+    assert status_resp_travelling.status_code == 200
 
     # 3. Crear solicitud pendiente
     client2_phone = "3004444465"
@@ -687,7 +704,8 @@ def test_complete_pending_request_without_negotiated_price():
         "/drivers/pending-request/complete", json=complete_data, headers=driver_headers)
     assert complete_resp.status_code == 200
     complete_data_resp = complete_resp.json()
-    assert complete_data_resp["success"] is True
+    assert "message" in complete_data_resp
+    assert "Solicitud pendiente completada correctamente" in complete_data_resp["message"]
 
     # 6. Verificar que la solicitud se completó correctamente
     detail_resp = client.get(
@@ -695,6 +713,7 @@ def test_complete_pending_request_without_negotiated_price():
     assert detail_resp.status_code == 200
     detail_data = detail_resp.json()
     assert detail_data["status"] == str(StatusEnum.ACCEPTED)
-    assert detail_data["negotiated_price"] is None  # Sin precio negociado
+    # Verificar que el precio asignado es igual al precio ofrecido por el cliente (sin negociación)
+    assert detail_data["fare_assigned"] == 20000  # Precio base del cliente
 
     print("✅ Test completado: Completar solicitud sin precio negociado")
