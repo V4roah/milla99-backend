@@ -409,6 +409,8 @@ def get_client_request_detail_service(session: Session, client_request_id: UUID,
             "updated_at": cr.updated_at.isoformat(),
             "client": client_data,
             "id_driver_assigned": cr.id_driver_assigned,
+            # Agregar campo para conductor ocupado
+            "assigned_busy_driver_id": cr.assigned_busy_driver_id,
             "pickup_position": wkb_to_coords(cr.pickup_position),
             "destination_position": wkb_to_coords(cr.destination_position),
             "driver_info": driver_info,
@@ -1836,6 +1838,9 @@ def find_available_drivers(
     """
     Busca conductores disponibles (sin viaje activo y sin solicitud pendiente)
     """
+    from app.models.driver_position import DriverPosition
+    from app.utils.geo_utils import wkb_to_coords
+
     client_point = func.ST_GeomFromText(
         f'POINT({client_lng} {client_lat})', 4326)
 
@@ -1849,12 +1854,14 @@ def find_available_drivers(
             User,
             DriverInfo,
             VehicleInfo,
-            ST_Distance_Sphere(VehicleInfo.position,
+            DriverPosition,
+            ST_Distance_Sphere(DriverPosition.position,
                                client_point).label("distance")
         )
         .join(UserHasRole, User.id == UserHasRole.id_user)
         .join(DriverInfo, User.id == DriverInfo.user_id)
         .join(VehicleInfo, DriverInfo.id == VehicleInfo.driver_info_id)
+        .join(DriverPosition, User.id == DriverPosition.id_driver)
         .filter(
             UserHasRole.id_rol == "DRIVER",
             UserHasRole.status == RoleStatus.APPROVED,
@@ -1865,11 +1872,16 @@ def find_available_drivers(
     )
 
     results = []
-    for user, driver_info, vehicle_info, distance in query.all():
+    for user, driver_info, vehicle_info, driver_position, distance in query.all():
         if distance <= max_distance * 1000:  # Convertir km a metros
+            # Obtener coordenadas del conductor desde DriverPosition
+            driver_coords = wkb_to_coords(driver_position.position)
+            if not driver_coords:
+                continue  # Saltar si no hay coordenadas válidas
+
             # Calcular tiempo estimado directo
             estimated_time = calculate_direct_time(
-                client_lat, client_lng, vehicle_info.lat, vehicle_info.lng)
+                client_lat, client_lng, driver_coords["lat"], driver_coords["lng"])
 
             results.append({
                 "user_id": user.id,
@@ -1898,6 +1910,9 @@ def find_busy_drivers(
     """
     Busca conductores ocupados que pueden tomar la solicitud
     """
+    from app.models.driver_position import DriverPosition
+    from app.utils.geo_utils import wkb_to_coords
+
     client_point = func.ST_GeomFromText(
         f'POINT({client_lng} {client_lat})', 4326)
 
@@ -1912,13 +1927,15 @@ def find_busy_drivers(
             DriverInfo,
             VehicleInfo,
             ClientRequest,
-            ST_Distance_Sphere(VehicleInfo.position,
+            DriverPosition,
+            ST_Distance_Sphere(DriverPosition.position,
                                client_point).label("distance")
         )
         .join(UserHasRole, User.id == UserHasRole.id_user)
         .join(DriverInfo, User.id == DriverInfo.user_id)
         .join(VehicleInfo, DriverInfo.id == VehicleInfo.driver_info_id)
         .join(ClientRequest, User.id == ClientRequest.id_driver_assigned)
+        .join(DriverPosition, User.id == DriverPosition.id_driver)
         .filter(
             UserHasRole.id_rol == "DRIVER",
             UserHasRole.status == RoleStatus.APPROVED,
@@ -1931,8 +1948,13 @@ def find_busy_drivers(
     )
 
     results = []
-    for user, driver_info, vehicle_info, current_request, distance in query.all():
+    for user, driver_info, vehicle_info, current_request, driver_position, distance in query.all():
         if distance <= config["max_distance"] * 1000:  # Convertir km a metros
+            # Obtener coordenadas del conductor desde DriverPosition
+            driver_coords = wkb_to_coords(driver_position.position)
+            if not driver_coords:
+                continue  # Saltar si no hay coordenadas válidas
+
             # Calcular tiempo total para conductor ocupado
             total_time = calculate_busy_driver_total_time(
                 session, driver_info, current_request, client_lat, client_lng, config
@@ -2326,3 +2348,139 @@ def get_eta_service(session, client_request_id):
     except Exception as e:
         traceback.print_exc()
         raise
+
+
+def assign_busy_driver_with_validation(session: Session, client_request_id: UUID, driver_id: UUID, fare_assigned: float = None):
+    """
+    Asigna un conductor ocupado a una solicitud de cliente con todas las validaciones necesarias.
+    Esta función maneja toda la lógica de negocio que estaba en el router.
+    """
+    from app.models.client_request import ClientRequest
+    from app.models.driver_info import DriverInfo
+    from app.models.vehicle_info import VehicleInfo
+    from app.models.user_has_roles import UserHasRole, RoleStatus
+    from app.models.type_service import TypeService
+    from app.utils.geo_utils import wkb_to_coords
+    from datetime import datetime, timedelta
+    import pytz
+
+    COLOMBIA_TZ = pytz.timezone("America/Bogota")
+
+    try:
+        # 1. Validar que el conductor tiene rol DRIVER aprobado
+        user_role = session.query(UserHasRole).filter(
+            UserHasRole.id_user == driver_id,
+            UserHasRole.id_rol == "DRIVER"
+        ).first()
+
+        if not user_role or user_role.status != RoleStatus.APPROVED:
+            raise HTTPException(
+                status_code=400,
+                detail="El usuario no tiene el rol de conductor aprobado. No se puede asignar como conductor."
+            )
+
+        # 2. Obtener la solicitud de cliente
+        client_request = session.query(ClientRequest).filter(
+            ClientRequest.id == client_request_id
+        ).first()
+        if not client_request:
+            raise HTTPException(
+                status_code=404, detail="Solicitud no encontrada")
+
+        # 3. Obtener el tipo de servicio de la solicitud
+        type_service = session.query(TypeService).filter(
+            TypeService.id == client_request.type_service_id
+        ).first()
+        if not type_service:
+            raise HTTPException(
+                status_code=404, detail="Tipo de servicio no encontrado")
+
+        # 4. Obtener información del conductor
+        driver_info = session.query(DriverInfo).filter(
+            DriverInfo.user_id == driver_id
+        ).first()
+        if not driver_info:
+            raise HTTPException(
+                status_code=404, detail="El conductor no tiene información registrada")
+
+        # 5. Verificar que el conductor tiene un vehículo del tipo correcto
+        vehicle_info = session.query(VehicleInfo).filter(
+            VehicleInfo.driver_info_id == driver_info.id,
+            VehicleInfo.vehicle_type_id == type_service.vehicle_type_id
+        ).first()
+        if not vehicle_info:
+            raise HTTPException(
+                status_code=400,
+                detail="El conductor no tiene un vehículo del tipo requerido para este servicio"
+            )
+
+        # 6. Verificar que el conductor está ocupado (tiene un viaje activo)
+        active_request = session.query(ClientRequest).filter(
+            ClientRequest.id_driver_assigned == driver_id,
+            ClientRequest.status.in_([
+                "ON_THE_WAY", "ARRIVED", "TRAVELLING"
+            ])
+        ).first()
+
+        if not active_request:
+            # El conductor no está ocupado, usar asignación normal
+            return assign_driver_service(session, client_request_id, driver_id, fare_assigned)
+
+        # 7. El conductor está ocupado, calcular tiempos y validaciones
+        from app.services.client_requests_service import (
+            get_busy_driver_config,
+            calculate_remaining_trip_time,
+            calculate_transit_time
+        )
+
+        # Obtener configuraciones
+        config = get_busy_driver_config(session)
+
+        # Calcular tiempo restante del viaje actual (en minutos)
+        remaining_time = calculate_remaining_trip_time(active_request) / 60.0
+
+        # Extraer coordenadas del nuevo cliente
+        new_client_coords = wkb_to_coords(client_request.pickup_position)
+        if not new_client_coords:
+            raise HTTPException(
+                status_code=400,
+                detail="No se pudieron obtener las coordenadas de recogida del nuevo cliente"
+            )
+
+        # Calcular tiempo de tránsito al nuevo cliente (en minutos)
+        transit_time = calculate_transit_time(
+            active_request,
+            new_client_coords["lat"],
+            new_client_coords["lng"]
+        ) / 60.0
+
+        # Calcular tiempo estimado de recogida
+        estimated_pickup_time = datetime.now(
+            COLOMBIA_TZ) + timedelta(minutes=remaining_time + transit_time)
+
+        # 8. Usar assign_busy_driver para la asignación final
+        success = assign_busy_driver(
+            session,
+            client_request_id,
+            driver_id,
+            estimated_pickup_time,
+            remaining_time,
+            transit_time
+        )
+
+        if success:
+            return {"success": True, "message": "Conductor ocupado asignado correctamente como pendiente"}
+        else:
+            raise HTTPException(
+                status_code=409,
+                detail="Conductor ocupado no cumple con las validaciones de distancia, tiempo total o tiempo de tránsito"
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error en assign_busy_driver_with_validation: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al asignar el conductor ocupado: {str(e)}"
+        )

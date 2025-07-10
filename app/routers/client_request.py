@@ -692,127 +692,15 @@ def assign_driver(
     session: Session = Depends(get_session)
 ):
     try:
-        import traceback as tb
-        from app.models.client_request import ClientRequest
+        # Usar el servicio que maneja toda la lógica de negocio
+        from app.services.client_requests_service import assign_busy_driver_with_validation
 
-        # 1. Obtener la solicitud
-        client_request = session.query(ClientRequest).filter(
-            ClientRequest.id == request_data.id_client_request).first()
-        if not client_request:
-            raise HTTPException(
-                status_code=404, detail="Solicitud no encontrada")
-
-        # 2. Obtener el tipo de servicio de la solicitud
-        type_service = session.query(TypeService).filter(
-            TypeService.id == client_request.type_service_id).first()
-        if not type_service:
-            raise HTTPException(
-                status_code=404, detail="Tipo de servicio no encontrado")
-
-        # 3. Obtener el vehículo del conductor
-        from app.models.driver_info import DriverInfo
-        from app.models.vehicle_info import VehicleInfo
-
-        driver_info = session.query(DriverInfo).filter(
-            DriverInfo.user_id == request_data.id_driver).first()
-        if not driver_info:
-            raise HTTPException(
-                status_code=404, detail="El conductor no tiene información registrada")
-
-        vehicle = session.query(VehicleInfo).filter(
-            VehicleInfo.driver_info_id == driver_info.id).first()
-        if not vehicle:
-            raise HTTPException(
-                status_code=404, detail="El conductor no tiene vehículo registrado")
-
-        # 4. Validar compatibilidad de tipo de vehículo
-        if vehicle.vehicle_type_id != type_service.vehicle_type_id:
-            raise HTTPException(
-                status_code=400,
-                detail="El conductor no tiene un vehículo compatible con el tipo de servicio solicitado"
-            )
-
-        # Verificar si el conductor está ocupado (tiene un viaje activo)
-        from app.models.driver_info import DriverInfo
-
-        # Buscar si el conductor tiene un viaje activo
-        active_request = session.query(ClientRequest).filter(
-            ClientRequest.id_driver_assigned == request_data.id_driver,
-            ClientRequest.status.in_([
-                "ON_THE_WAY", "ARRIVED", "TRAVELLING"
-            ])
-        ).first()
-
-        if active_request:
-            # El conductor está ocupado, usar assign_busy_driver
-            from app.services.client_requests_service import (
-                assign_busy_driver,
-                calculate_busy_driver_total_time,
-                get_busy_driver_config,
-                calculate_remaining_trip_time,
-                calculate_transit_time
-            )
-            from datetime import datetime, timedelta
-
-            # Obtener la nueva solicitud para calcular tiempos
-            new_request = session.query(ClientRequest).filter(
-                ClientRequest.id == request_data.id_client_request
-            ).first()
-
-            if not new_request:
-                raise HTTPException(
-                    status_code=404, detail="Solicitud no encontrada")
-
-            # Calcular tiempos dinámicamente
-            config = get_busy_driver_config(session)
-
-            # Calcular tiempo restante del viaje actual (en minutos)
-            remaining_time = calculate_remaining_trip_time(
-                active_request) / 60.0
-
-            # Calcular tiempo de tránsito al nuevo cliente (en minutos)
-            transit_time = calculate_transit_time(
-                active_request,
-                new_request.pickup_lat,
-                new_request.pickup_lng
-            ) / 60.0
-
-            print(f"🔍 Tiempos calculados dinámicamente:")
-            print(
-                f"   - Tiempo restante del viaje actual: {remaining_time:.2f} minutos")
-            print(
-                f"   - Tiempo de tránsito al nuevo cliente: {transit_time:.2f} minutos")
-            print(
-                f"   - Tiempo total: {remaining_time + transit_time:.2f} minutos")
-
-            # Calcular tiempo estimado de recogida
-            estimated_pickup_time = datetime.now(
-                COLOMBIA_TZ) + timedelta(minutes=remaining_time + transit_time)
-
-            success = assign_busy_driver(
-                session,
-                request_data.id_client_request,
-                request_data.id_driver,
-                estimated_pickup_time,
-                remaining_time,
-                transit_time
-            )
-
-            if success:
-                return {"success": True, "message": "Conductor ocupado asignado correctamente como pendiente"}
-            else:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Conductor ocupado no cumple con las validaciones de distancia, tiempo total o tiempo de tránsito"
-                )
-        else:
-            # El conductor está disponible, usar assign_driver_service normal
-            return assign_driver_service(
-                session,
-                request_data.id_client_request,
-                request_data.id_driver,
-                request_data.fare_assigned
-            )
+        return assign_busy_driver_with_validation(
+            session,
+            request_data.id_client_request,
+            request_data.id_driver,
+            request_data.fare_assigned
+        )
     except HTTPException as e:
         print("[HTTPException]", e.detail)
         print(tb.format_exc())

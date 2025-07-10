@@ -585,4 +585,4 @@ def create_and_approve_driver(client, phone_number, country_code):
 
     response_data = verify_resp.json()
 
-    return response_data["access_token"], str(driver_id)
+    return response_data["access_token"], driver_id
