@@ -469,6 +469,7 @@ Devuelve una lista de solicitudes de viaje del usuario autenticado filtradas por
 **Parámetros:**
 - `status`: Estado por el cual filtrar las solicitudes. Debe ser uno de:
   - `CREATED`: Solicitud recién creada, esperando conductor
+  - `PENDING`: Solicitud asignada a conductor ocupado, esperando que termine su viaje actual
   - `ACCEPTED`: Conductor asignado, esperando inicio del viaje
   - `ON_THE_WAY`: Conductor en camino al punto de recogida
   - `ARRIVED`: Conductor llegó al punto de recogida
@@ -484,7 +485,7 @@ Incluye información del conductor asignado (nombre y selfie) para el historial 
 def get_client_requests_by_status(
     request: Request,
     session: SessionDep,
-    status: str = Path(..., description="Estado por el cual filtrar las solicitudes. Estados válidos: CREATED, ACCEPTED, ON_THE_WAY, ARRIVED, TRAVELLING, FINISHED, PAID, CANCELLED")
+    status: str = Path(..., description="Estado por el cual filtrar las solicitudes. Estados válidos: CREATED, PENDING, ACCEPTED, ON_THE_WAY, ARRIVED, TRAVELLING, FINISHED, PAID, CANCELLED")
 ):
     """
     Devuelve una lista de solicitudes de viaje del usuario autenticado filtradas por el estatus enviado en el parámetro.

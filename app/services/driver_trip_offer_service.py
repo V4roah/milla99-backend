@@ -62,11 +62,12 @@ class DriverTripOfferService:
                                 detail="Solicitud de cliente no encontrada")
 
         print(f"Estado de client request: {client_request.status}")
-        if client_request.status != StatusEnum.CREATED:
+        # ✅ ACTUALIZAR: Permitir ofertas en solicitudes CREATED y PENDING
+        if client_request.status not in [StatusEnum.CREATED, StatusEnum.PENDING]:
             print(
-                f"ERROR: Client request no está en estado CREATED, está en: {client_request.status}")
+                f"ERROR: Client request no está en estado CREATED o PENDING, está en: {client_request.status}")
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                                detail="La solicitud no está en estado CREATED")
+                                detail="La solicitud debe estar en estado CREATED o PENDING para recibir ofertas")
 
         # Validar que el precio ofrecido no sea menor al precio base
         print(f"Fare offered en client request: {client_request.fare_offered}")

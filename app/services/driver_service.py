@@ -462,7 +462,9 @@ class DriverService:
             # Verificar que la solicitud existe y está disponible
             client_request = self.session.query(ClientRequest).filter(
                 ClientRequest.id == client_request_id,
-                ClientRequest.status == StatusEnum.CREATED
+                # ✅ ACTUALIZAR: Permitir solicitudes PENDING
+                ClientRequest.status.in_(
+                    [StatusEnum.CREATED, StatusEnum.PENDING])
             ).first()
 
             if not client_request:
@@ -517,6 +519,7 @@ class DriverService:
                 print(
                     f"DEBUG: Client request {driver_info.pending_request_id} not found")
                 return False
+            # ✅ ACTUALIZAR: Cambiar de PENDING a ACCEPTED cuando el conductor completa su viaje actual
             client_request.id_driver_assigned = user_id
             client_request.status = StatusEnum.ACCEPTED
             client_request.assigned_busy_driver_id = None

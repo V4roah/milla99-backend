@@ -283,9 +283,11 @@ def test_busy_driver_pending_request_validation_rejection():
     print(
         f"🔍 Conductor asignado: {new_request_data.get('id_driver_assigned', 'None')}")
 
-    # 5. Verificar que la nueva solicitud está en estado CREATED (pendiente)
-    assert new_request_data["status"] in ["CREATED", "StatusEnum.CREATED"]
-    print(f"✅ Paso 4: Nueva solicitud en estado CREATED (pendiente)")
+    # 5. Verificar que la nueva solicitud está en estado CREATED o PENDING (pendiente)
+    assert new_request_data["status"] in [
+        "CREATED", "PENDING", "StatusEnum.CREATED", "StatusEnum.PENDING"]
+    print(
+        f"✅ Paso 4: Nueva solicitud en estado {new_request_data['status']} (pendiente)")
 
     # 6. Verificar que el conductor tiene solicitud pendiente asignada
     try:
@@ -447,8 +449,10 @@ def test_busy_driver_can_accept_request_when_meets_requirements():
         print(f"   - Get Response: {new_request_resp.text}")
         assert new_request_resp.status_code == 200
         new_request_data = new_request_resp.json()
-        assert new_request_data["status"] in ["CREATED", "StatusEnum.CREATED"]
-        print(f"✅ Paso 4: Nueva solicitud en estado CREATED (pendiente)")
+        assert new_request_data["status"] in [
+            "CREATED", "PENDING", "StatusEnum.CREATED", "StatusEnum.PENDING"]
+        print(
+            f"✅ Paso 4: Nueva solicitud en estado {new_request_data['status']} (pendiente)")
 
         # 6. Asignar manualmente la solicitud al conductor ocupado (simular asignación automática)
         print("🔍 Paso 5: Asignando manualmente solicitud al conductor ocupado...")

@@ -38,6 +38,7 @@ class ClientRequestCreate(SQLModel):
 
 class StatusEnum(str, enum.Enum):
     CREATED = "CREATED"
+    PENDING = "PENDING"  # Solicitud asignada a conductor ocupado, esperando que termine su viaje actual
     ACCEPTED = "ACCEPTED"
     ARRIVED = "ARRIVED"
     ON_THE_WAY = "ON_THE_WAY"

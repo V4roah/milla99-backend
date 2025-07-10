@@ -129,7 +129,8 @@ async def get_nearby_client_requests_service(driver_lat, driver_lng, session: Se
         .join(User, User.id == ClientRequest.id_client)
         .join(TypeService, TypeService.id == ClientRequest.type_service_id)
         .filter(
-            ClientRequest.status == "CREATED",
+            # ✅ ACTUALIZAR: Incluir solicitudes PENDING
+            ClientRequest.status.in_([StatusEnum.CREATED, StatusEnum.PENDING]),
             ClientRequest.created_at > time_limit
         )
     )
@@ -965,7 +966,7 @@ class ClientRequestStateMachine:
     Máquina de estados para controlar las transiciones válidas en una solicitud de viaje.
     """
     # Estados que permiten cancelación
-    CANCELLABLE_STATES = {StatusEnum.CREATED,
+    CANCELLABLE_STATES = {StatusEnum.CREATED, StatusEnum.PENDING,  # ✅ ACTUALIZAR: PENDING permite cancelación
                           StatusEnum.ACCEPTED, StatusEnum.ON_THE_WAY,
                           StatusEnum.ARRIVED}
 
@@ -980,6 +981,8 @@ class ClientRequestStateMachine:
 
     CLIENT_TRANSITIONS: Dict[StatusEnum, Set[StatusEnum]] = {
         StatusEnum.CREATED: {StatusEnum.CANCELLED},
+        # ✅ ACTUALIZAR: PENDING permite cancelación
+        StatusEnum.PENDING: {StatusEnum.CANCELLED},
         StatusEnum.ACCEPTED: {StatusEnum.CANCELLED},
         StatusEnum.ON_THE_WAY: {StatusEnum.CANCELLED},
         # PAID solo se puede establecer después de un pago exitoso, no por cambio directo de estado
@@ -2211,6 +2214,8 @@ def assign_busy_driver(session, client_request_id, driver_id, estimated_pickup_t
     print(
         f"DEBUG: Before assignment - client_request.id={client_request.id}, client_request.assigned_busy_driver_id={client_request.assigned_busy_driver_id}")
 
+    # ✅ ACTUALIZAR: Cambiar estado a PENDING cuando se asigna conductor ocupado
+    client_request.status = StatusEnum.PENDING
     client_request.assigned_busy_driver_id = driver_id
     client_request.estimated_pickup_time = estimated_pickup_time
     client_request.driver_current_trip_remaining_time = remaining_time
