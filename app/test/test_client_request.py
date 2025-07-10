@@ -106,22 +106,39 @@ def test_client_request_pending_status():
         client, driver_phone, driver_country_code)
     driver_headers = {"Authorization": f"Bearer {driver_token}"}
 
-    # Crear posición para el conductor (necesario para las validaciones)
+    # Actualizar la posición del conductor para que esté cerca del cliente (cumplir validaciones)
     from app.models.driver_position import DriverPosition
     from geoalchemy2.shape import from_shape
     from shapely.geometry import Point
+    from sqlalchemy import select, update
 
     with Session(engine) as session:
-        # Crear posición del conductor muy cerca del cliente para cumplir con las validaciones
-        # Usar coordenadas muy cercanas para que pase las validaciones de distancia y tiempo
-        driver_position = DriverPosition(
-            id_driver=driver_id,  # driver_id ya es UUID desde create_and_approve_driver
-            # Posición muy cercana al cliente (a 500 metros)
-            position=from_shape(Point(-74.073170, 4.718136), srid=4326)
-        )
-        session.add(driver_position)
-        session.commit()
-        print(f"✅ Posición creada para conductor {driver_id}")
+        # Buscar la posición existente del conductor
+        existing_position = session.exec(
+            select(DriverPosition).where(DriverPosition.id_driver == driver_id)
+        ).first()
+
+        if existing_position:
+            # Actualizar la posición para que esté muy cerca del cliente (cumplir validaciones)
+            # Usar coordenadas muy cercanas al cliente para que pase las validaciones de distancia
+            from sqlalchemy import func
+
+            # Eliminar la posición existente y crear una nueva
+            session.delete(existing_position)
+            session.commit()
+
+            # Crear nueva posición cerca del cliente
+            new_position = DriverPosition(
+                id_driver=driver_id,
+                position=func.ST_GeomFromText(
+                    'POINT(-74.073170 4.718136)', 4326)
+            )
+            session.add(new_position)
+            session.commit()
+            print(
+                f"✅ Posición actualizada para conductor {driver_id} (cerca del cliente)")
+        else:
+            print(f"⚠️ No se encontró posición para conductor {driver_id}")
 
     # Simular que el conductor está ocupado (en viaje activo)
     # Crear otra solicitud y ponerla en estado TRAVELLING

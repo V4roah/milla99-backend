@@ -106,18 +106,20 @@ class DriverSearchService:
                 # Obtener posición del conductor desde DriverPosition
                 driver_pos = self._get_driver_position(driver.user_id)
                 if driver_pos:
-                    distance = get_time_and_distance_from_google(
+                    distance_data = get_time_and_distance_from_google(
                         latitude, longitude,
                         driver_pos["lat"], driver_pos["lng"]
-                    )["distance"]
-                    drivers_with_distance.append({
-                        "driver": driver,
-                        "distance": distance,
-                        "estimated_time": get_time_and_distance_from_google(
-                            latitude, longitude,
-                            driver_pos["lat"], driver_pos["lng"]
-                        )["estimated_time"]
-                    })
+                    )
+                    if distance_data[0] is not None and distance_data[1] is not None:
+                        # Convertir metros a km
+                        distance_km = distance_data[0] / 1000
+                        # Convertir segundos a minutos
+                        duration_min = distance_data[1] / 60
+                        drivers_with_distance.append({
+                            "driver": driver,
+                            "distance": distance_km,
+                            "estimated_time": duration_min
+                        })
 
             # Ordenar por distancia (más cercanos primero)
             drivers_with_distance.sort(key=lambda x: x["distance"])
@@ -202,8 +204,14 @@ class DriverSearchService:
                     latitude, longitude,
                     driver_pos["lat"], driver_pos["lng"]
                 )
-                distance = distance_data["distance"]
-                transit_time = distance_data["estimated_time"]
+                if distance_data[0] is None or distance_data[1] is None:
+                    print(
+                        f"❌ Conductor {driver.id}: No se pudo obtener distancia/tiempo de Google")
+                    continue
+
+                distance = distance_data[0] / 1000  # Convertir metros a km
+                # Convertir segundos a minutos
+                transit_time = distance_data[1] / 60
 
                 # Validación 1: Distancia máxima
                 if distance > max_distance:

@@ -1,6 +1,6 @@
 import io
 from fastapi import status
-from datetime import date
+from datetime import date, datetime
 import json
 from uuid import UUID
 import traceback
@@ -584,5 +584,31 @@ def create_and_approve_driver(client, phone_number, country_code):
     assert verify_resp.status_code == 200, f"Falló al verificar código para {phone_number}: {verify_resp.text}"
 
     response_data = verify_resp.json()
+    driver_token = response_data["access_token"]
+    driver_headers = {"Authorization": f"Bearer {driver_token}"}
 
-    return response_data["access_token"], driver_id
+    # Crear una posición inicial para el conductor
+    from app.models.driver_position import DriverPosition
+    from sqlalchemy import func
+
+    with Session(engine) as session:
+        # Verificar si ya existe una posición para este conductor
+        existing_position = session.exec(
+            select(DriverPosition).where(DriverPosition.id_driver == driver_id)
+        ).first()
+
+        if not existing_position:
+            # Crear posición inicial cerca del destino del viaje activo para cumplir validaciones
+            initial_position = DriverPosition(
+                id_driver=driver_id,
+                position=func.ST_GeomFromText(
+                    # Cerca del destino del viaje activo
+                    'POINT(-74.108776 4.703468)', 4326),
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
+            session.add(initial_position)
+            session.commit()
+            print(f"✅ Posición inicial creada para conductor {driver_id}")
+
+    return driver_token, driver_id
