@@ -496,9 +496,10 @@ class DriverService:
             print(f"Error accepting pending request: {e}")
             return False
 
-    def complete_pending_request(self, user_id: UUID) -> bool:
+    def complete_pending_request(self, user_id: UUID, fare_assigned: Optional[float] = None) -> bool:
         """
         Completa la solicitud pendiente de un conductor (cuando termina su viaje actual)
+        Permite negociación de precios si se proporciona fare_assigned
         """
         try:
             print(f"DEBUG: Completing pending request for user {user_id}")
@@ -519,6 +520,28 @@ class DriverService:
                 print(
                     f"DEBUG: Client request {driver_info.pending_request_id} not found")
                 return False
+
+            # ✅ NEGOCIACIÓN DE PRECIOS: Si se proporciona fare_assigned, validar y asignar
+            if fare_assigned is not None:
+                print(
+                    f"DEBUG: Negotiating price - fare_assigned: {fare_assigned}, fare_offered: {client_request.fare_offered}")
+
+                # Validar que el precio ofrecido no sea menor al precio base del cliente
+                if fare_assigned < client_request.fare_offered:
+                    print(
+                        f"ERROR: fare_assigned ({fare_assigned}) cannot be less than fare_offered ({client_request.fare_offered})")
+                    return False
+
+                # Asignar el precio negociado
+                client_request.fare_assigned = fare_assigned
+                print(
+                    f"DEBUG: Price negotiated successfully - fare_assigned: {fare_assigned}")
+            else:
+                # Si no se proporciona precio, usar el precio ofrecido por el cliente
+                client_request.fare_assigned = client_request.fare_offered
+                print(
+                    f"DEBUG: Using client's offered price - fare_assigned: {client_request.fare_assigned}")
+
             # ✅ ACTUALIZAR: Cambiar de PENDING a ACCEPTED cuando el conductor completa su viaje actual
             client_request.id_driver_assigned = user_id
             client_request.status = StatusEnum.ACCEPTED
@@ -536,7 +559,7 @@ class DriverService:
             print(
                 f"DEBUG: After complete - driver_info.pending_request_id: {driver_info.pending_request_id}")
             print(
-                f"DEBUG: After complete - client_request.id_driver_assigned: {client_request.id_driver_assigned}, status: {client_request.status}")
+                f"DEBUG: After complete - client_request.id_driver_assigned: {client_request.id_driver_assigned}, status: {client_request.status}, fare_assigned: {client_request.fare_assigned}")
             return True
         except Exception as e:
             self.session.rollback()

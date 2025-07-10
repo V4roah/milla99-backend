@@ -514,20 +514,27 @@ async def accept_pending_request(
 
 @router.post("/pending-request/complete", status_code=status.HTTP_200_OK, description="""
 Completa una solicitud pendiente del conductor (marca como completada).
+Permite negociación de precios si se proporciona fare_assigned.
+
+**Parámetros:**
+- `fare_assigned`: Precio negociado por el conductor (opcional). Si no se proporciona, se usa el precio ofrecido por el cliente.
 
 **Respuesta:**
 Devuelve un mensaje de confirmación si la solicitud se completó correctamente.
 """)
 async def complete_pending_request(
     request: Request,
+    fare_assigned: Optional[float] = None,
     session: Session = Depends(get_session),
     current_user=Depends(get_current_user)
 ):
     """
     Completa una solicitud pendiente del conductor.
+    Permite negociación de precios si se proporciona fare_assigned.
 
     Args:
         request: Request object para obtener el user_id del token
+        fare_assigned: Precio negociado por el conductor (opcional)
         session: Sesión de base de datos
         current_user: Usuario autenticado
     """
@@ -535,15 +542,21 @@ async def complete_pending_request(
         # Obtener el user_id desde el token
         user_id = request.state.user_id
 
-        # Usar el servicio para completar la solicitud pendiente
+        # Usar el servicio para completar la solicitud pendiente con precio negociado
         service = DriverService(session)
-        success = service.complete_pending_request(user_id)
+        success = service.complete_pending_request(user_id, fare_assigned)
 
         if success:
-            return {"message": "Solicitud pendiente completada correctamente"}
+            if fare_assigned is not None:
+                return {
+                    "message": "Solicitud pendiente completada correctamente con precio negociado",
+                    "fare_assigned": fare_assigned
+                }
+            else:
+                return {"message": "Solicitud pendiente completada correctamente"}
         else:
             raise HTTPException(
-                status_code=400, detail="No se pudo completar la solicitud pendiente")
+                status_code=400, detail="No se pudo completar la solicitud pendiente. Verifique que el precio ofrecido no sea menor al precio base del cliente.")
 
     except HTTPException:
         raise
@@ -633,6 +646,97 @@ async def get_pending_request(
         raise
     except Exception as e:
         print(f"Error obteniendo solicitud pendiente: {e}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error interno del servidor: {str(e)}"
+        )
+
+
+@router.post("/pending-request/offer", status_code=status.HTTP_200_OK, description="""
+Hace una oferta de precio para una solicitud pendiente del conductor.
+Permite al conductor ofrecer un precio diferente al precio base del cliente.
+
+**Parámetros:**
+- `fare_offer`: Precio ofrecido por el conductor (debe ser mayor o igual al precio base del cliente).
+
+**Respuesta:**
+Devuelve un mensaje de confirmación si la oferta se creó correctamente.
+""")
+async def make_pending_request_offer(
+    request: Request,
+    fare_offer: float,
+    session: Session = Depends(get_session),
+    current_user=Depends(get_current_user)
+):
+    """
+    Hace una oferta de precio para una solicitud pendiente del conductor.
+
+    Args:
+        request: Request object para obtener el user_id del token
+        fare_offer: Precio ofrecido por el conductor
+        session: Sesión de base de datos
+        current_user: Usuario autenticado
+    """
+    try:
+        # Obtener el user_id desde el token
+        user_id = request.state.user_id
+
+        # Obtener la información del conductor
+        driver_info = session.query(DriverInfo).filter(
+            DriverInfo.user_id == user_id
+        ).first()
+        
+        if not driver_info or driver_info.pending_request_id is None:
+            raise HTTPException(
+                status_code=400, 
+                detail="No tienes una solicitud pendiente para hacer oferta"
+            )
+
+        # Obtener la solicitud pendiente
+        from app.models.client_request import ClientRequest
+        client_request = session.query(ClientRequest).filter(
+            ClientRequest.id == driver_info.pending_request_id
+        ).first()
+
+        if not client_request:
+            raise HTTPException(
+                status_code=404, 
+                detail="Solicitud pendiente no encontrada"
+            )
+
+        # Validar que el precio ofrecido no sea menor al precio base del cliente
+        if fare_offer < client_request.fare_offered:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El precio ofrecido ({fare_offer}) no puede ser menor al precio base del cliente ({client_request.fare_offered})"
+            )
+
+        # Crear la oferta usando el servicio de ofertas
+        from app.services.driver_trip_offer_service import DriverTripOfferService
+        offer_service = DriverTripOfferService(session)
+        
+        offer_data = {
+            "id_driver": user_id,
+            "id_client_request": client_request.id,
+            "fare_offer": fare_offer,
+            "time": 0,  # Se calculará automáticamente
+            "distance": 0  # Se calculará automáticamente
+        }
+
+        offer = offer_service.create_offer(offer_data)
+
+        return {
+            "message": "Oferta creada correctamente para la solicitud pendiente",
+            "offer_id": str(offer.id),
+            "fare_offer": fare_offer,
+            "client_request_id": str(client_request.id)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error creando oferta para solicitud pendiente: {e}")
         traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
