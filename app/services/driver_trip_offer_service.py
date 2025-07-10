@@ -259,6 +259,7 @@ class DriverTripOfferService:
 
             result.append(DriverTripOfferResponse(
                 id=offer.id,
+                client_request_id=offer.id_client_request,
                 fare_offer=offer.fare_offer,
                 time=time_to_return,
                 distance=distance_to_return,

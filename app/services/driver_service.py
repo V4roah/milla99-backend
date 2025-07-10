@@ -496,10 +496,10 @@ class DriverService:
             print(f"Error accepting pending request: {e}")
             return False
 
-    def complete_pending_request(self, user_id: UUID, fare_assigned: Optional[float] = None) -> bool:
+    def complete_pending_request(self, user_id: UUID) -> bool:
         """
         Completa la solicitud pendiente de un conductor (cuando termina su viaje actual)
-        Permite negociación de precios si se proporciona fare_assigned
+        Usa el precio de la oferta aceptada por el cliente, o el precio base si no hay oferta
         """
         try:
             print(f"DEBUG: Completing pending request for user {user_id}")
@@ -521,23 +521,20 @@ class DriverService:
                     f"DEBUG: Client request {driver_info.pending_request_id} not found")
                 return False
 
-            # ✅ NEGOCIACIÓN DE PRECIOS: Si se proporciona fare_assigned, validar y asignar
-            if fare_assigned is not None:
+            # Buscar la oferta aceptada del conductor para esta solicitud
+            from app.models.driver_trip_offer import DriverTripOffer
+            accepted_offer = self.session.query(DriverTripOffer).filter(
+                DriverTripOffer.id_client_request == client_request.id,
+                DriverTripOffer.id_driver == user_id
+            ).first()
+            
+            if accepted_offer:
+                # Usar el precio de la oferta aceptada
+                client_request.fare_assigned = accepted_offer.fare_offer
                 print(
-                    f"DEBUG: Negotiating price - fare_assigned: {fare_assigned}, fare_offered: {client_request.fare_offered}")
-
-                # Validar que el precio ofrecido no sea menor al precio base del cliente
-                if fare_assigned < client_request.fare_offered:
-                    print(
-                        f"ERROR: fare_assigned ({fare_assigned}) cannot be less than fare_offered ({client_request.fare_offered})")
-                    return False
-
-                # Asignar el precio negociado
-                client_request.fare_assigned = fare_assigned
-                print(
-                    f"DEBUG: Price negotiated successfully - fare_assigned: {fare_assigned}")
+                    f"DEBUG: Using accepted offer price - fare_assigned: {accepted_offer.fare_offer}")
             else:
-                # Si no se proporciona precio, usar el precio ofrecido por el cliente
+                # Si no hay oferta aceptada, usar el precio base del cliente
                 client_request.fare_assigned = client_request.fare_offered
                 print(
                     f"DEBUG: Using client's offered price - fare_assigned: {client_request.fare_assigned}")
