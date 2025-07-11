@@ -713,16 +713,12 @@ def assign_driver(
         )
 
 
-# @router.patch("/updateStatus", description="""
-# Actualiza el estado de una solicitud de viaje existente.
+@router.patch("/updateStatus", tags=["Passengers"], description="""
+⚠️ Este endpoint está destinado únicamente para casos de emergencia o cuando la actualización automática por GPS falle.
+El flujo normal del sistema es automático y no requiere intervención manual.
 
-# **Parámetros:**
-# - `id_client_request`: ID de la solicitud de viaje.
-# - `status`: Nuevo estado a asignar.
-
-# **Respuesta:**
-# Devuelve un mensaje de éxito o error.
-# """)
+Permite al cliente cambiar manualmente el estado de la solicitud de viaje.
+""")
 def update_status(
     id_client_request: UUID = Body(...,
                                    description="ID de la solicitud de viaje"),
@@ -822,6 +818,9 @@ def check_driver_suspension_api(
 
 
 @router.patch("/updateStatusByDriver", tags=["Drivers"], description="""
+⚠️ Este endpoint está destinado únicamente para casos de emergencia o cuando la actualización automática por GPS falle.
+El flujo normal del sistema es automático y no requiere intervención manual.
+
 Actualiza el estado de una solicitud de viaje, solo permitido para conductores (DRIVER).
 
 **Parámetros:**

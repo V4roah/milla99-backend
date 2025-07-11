@@ -8,6 +8,8 @@ from sqlmodel import Session
 from app.core.db import engine
 from uuid import UUID
 import pytz
+from geoalchemy2.shape import from_shape
+from shapely.geometry import Point
 
 COLOMBIA_TZ = pytz.timezone("America/Bogota")
 
@@ -2474,6 +2476,473 @@ def test_eta_endpoint_simple():
         print(f"✅ ETA calculado correctamente: {data}")
     except Exception as e:
         print(f"\n❌ ERROR EN TEST ETA ENDPOINT SIMPLE:")
+        print(f"Tipo de error: {type(e).__name__}")
+        print(f"Mensaje: {str(e)}")
+        print("=== TRACEBACK COMPLETO ===")
+        traceback.print_exc()
+        print("=== FIN TRACEBACK ===")
+        raise
+
+
+def test_automatic_transition_accepted_to_on_the_way():
+    """
+    Prueba que la transición de ACCEPTED a ON_THE_WAY ocurre automáticamente
+    cuando el conductor se aleja más de 50 metros de la posición de aceptación.
+    """
+    from app.services.client_requests_service import evaluate_and_update_trip_state
+    from app.models.client_request import StatusEnum
+    from app.test.test_drivers import create_and_approve_driver
+    from sqlmodel import Session
+    from app.core.db import engine
+    from uuid import UUID
+
+    # 1. Crear y autenticar cliente
+    phone_number = "3011234599"
+    country_code = "+57"
+    user_data = {
+        "full_name": "Cliente Test Automático",
+        "country_code": country_code,
+        "phone_number": phone_number
+    }
+    create_user_resp = client.post("/users/", json=user_data)
+    assert create_user_resp.status_code == 201
+
+    send_resp = client.post(f"/auth/verify/{country_code}/{phone_number}/send")
+    assert send_resp.status_code == 201
+    code = send_resp.json()["message"].split()[-1]
+    verify_resp = client.post(
+        f"/auth/verify/{country_code}/{phone_number}/code",
+        json={"code": code}
+    )
+    assert verify_resp.status_code == 200
+    token = verify_resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 2. Crear y aprobar conductor
+    driver_phone = "3011234600"
+    driver_country_code = "+57"
+    driver_token, driver_id = create_and_approve_driver(
+        client, driver_phone, driver_country_code)
+
+    # 3. Crear solicitud de viaje vía API
+    request_data = {
+        "fare_offered": 20000,
+        "pickup_description": "Test Pickup",
+        "destination_description": "Test Destination",
+        "pickup_lat": 4.700000,
+        "pickup_lng": -74.100000,
+        "destination_lat": 4.710000,
+        "destination_lng": -74.110000,
+        "type_service_id": 1,
+        "payment_method_id": 1
+    }
+    create_resp = client.post(
+        "/client-request/", json=request_data, headers=headers)
+    assert create_resp.status_code == 201
+    client_request_id = create_resp.json()["id"]
+
+    # 4. Asignar el conductor a la solicitud (simular flujo real)
+    assign_data = {
+        "id_client_request": client_request_id,
+        "id_driver": str(driver_id),
+        "fare_assigned": 25000
+    }
+    assign_resp = client.patch(
+        "/client-request/updateDriverAssigned", json=assign_data, headers=headers)
+    assert assign_resp.status_code == 200
+
+    # 5. Poner el estado en ACCEPTED manualmente (simular aceptación)
+    with Session(engine) as session:
+        from app.models.client_request import ClientRequest
+        cr = session.get(ClientRequest, UUID(client_request_id))
+        cr.status = StatusEnum.ACCEPTED
+        session.add(cr)
+        session.commit()
+        session.refresh(cr)
+
+        # 6. Simular posición inicial del conductor (aceptación)
+        initial_position = {'lat': 4.700000, 'lng': -74.100000}
+        evaluate_and_update_trip_state(session, cr.id, initial_position)
+        session.refresh(cr)
+        assert cr.status == StatusEnum.ACCEPTED
+        assert cr.accepted_position_lat == initial_position['lat']
+        assert cr.accepted_position_lng == initial_position['lng']
+
+        # 7. Simular que el conductor se aleja más de 50 metros
+        new_position = {'lat': 4.701000, 'lng': -74.101000}
+        evaluate_and_update_trip_state(session, cr.id, new_position)
+        session.refresh(cr)
+        assert cr.status == StatusEnum.ON_THE_WAY
+
+
+def test_automatic_transition_on_the_way_to_arrived():
+    """
+    Prueba que la transición de ON_THE_WAY a ARRIVED ocurre automáticamente
+    cuando el conductor está a menos de 50 metros del punto de recogida.
+    """
+    import traceback
+    from app.services.client_requests_service import evaluate_and_update_trip_state
+    from app.models.client_request import StatusEnum
+    from app.test.test_drivers import create_and_approve_driver
+    from sqlmodel import Session
+    from app.core.db import engine
+    from uuid import UUID
+
+    try:
+        # 1. Crear y autenticar cliente
+        phone_number = "3011234800"
+        country_code = "+57"
+        user_data = {
+            "full_name": "Cliente Test On The Way",
+            "country_code": country_code,
+            "phone_number": phone_number
+        }
+        print(f"🔍 DEBUG: Intentando crear usuario con datos: {user_data}")
+        create_user_resp = client.post("/users/", json=user_data)
+        print(f"🔍 DEBUG: Status code: {create_user_resp.status_code}")
+        print(f"🔍 DEBUG: Response body: {create_user_resp.text}")
+
+        if create_user_resp.status_code != 201:
+            print(f"❌ ERROR: Falló la creación del usuario")
+            print(f"   Status: {create_user_resp.status_code}")
+            print(f"   Response: {create_user_resp.text}")
+            assert create_user_resp.status_code == 201
+
+        send_resp = client.post(
+            f"/auth/verify/{country_code}/{phone_number}/send")
+        assert send_resp.status_code == 201
+        code = send_resp.json()["message"].split()[-1]
+        verify_resp = client.post(
+            f"/auth/verify/{country_code}/{phone_number}/code",
+            json={"code": code}
+        )
+        assert verify_resp.status_code == 200
+        token = verify_resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # 2. Crear y aprobar conductor
+        driver_phone = "3011234801"
+        driver_country_code = "+57"
+        driver_token, driver_id = create_and_approve_driver(
+            client, driver_phone, driver_country_code)
+
+        # 3. Crear solicitud de viaje vía API
+        request_data = {
+            "fare_offered": 20000,
+            "pickup_description": "Test Pickup ON_THE_WAY",
+            "destination_description": "Test Destination ON_THE_WAY",
+            "pickup_lat": 4.700000,
+            "pickup_lng": -74.100000,
+            "destination_lat": 4.710000,
+            "destination_lng": -74.110000,
+            "type_service_id": 1,
+            "payment_method_id": 1
+        }
+        create_resp = client.post(
+            "/client-request/", json=request_data, headers=headers)
+        assert create_resp.status_code == 201
+        client_request_id = create_resp.json()["id"]
+
+        # 4. Asignar el conductor a la solicitud
+        assign_data = {
+            "id_client_request": client_request_id,
+            "id_driver": str(driver_id),
+            "fare_assigned": 25000
+        }
+        assign_resp = client.patch(
+            "/client-request/updateDriverAssigned", json=assign_data, headers=headers)
+        assert assign_resp.status_code == 200
+
+        # 5. Poner el estado en ON_THE_WAY manualmente (simular que ya pasó ACCEPTED → ON_THE_WAY)
+        with Session(engine) as session:
+            from app.models.client_request import ClientRequest
+            cr = session.get(ClientRequest, UUID(client_request_id))
+            cr.status = StatusEnum.ON_THE_WAY
+            # Simular que ya tiene posición de aceptación guardada
+            cr.accepted_position_lat = 4.695000
+            cr.accepted_position_lng = -74.095000
+            session.add(cr)
+            session.commit()
+            session.refresh(cr)
+
+            # 6. Simular posición lejos del punto de recogida (más de 50m)
+            far_position = {'lat': 4.695000,
+                            'lng': -74.095000}  # Lejos del pickup
+            print(f"🔍 DEBUG: Estado antes de evaluación lejos: {cr.status}")
+            evaluate_and_update_trip_state(session, cr.id, far_position)
+            session.refresh(cr)
+            print(f"🔍 DEBUG: Estado después de evaluación lejos: {cr.status}")
+            assert cr.status == StatusEnum.ON_THE_WAY  # Debe seguir en ON_THE_WAY
+
+            # 7. Simular que el conductor se acerca al punto de recogida (menos de 50m)
+            near_position = {'lat': 4.700200,
+                             'lng': -74.100200}  # Cerca del pickup (a ~30m)
+            print(f"🔍 DEBUG: Estado antes de evaluación cerca: {cr.status}")
+            print(f"🔍 DEBUG: Posición cerca del pickup: {near_position}")
+            print(f"🔍 DEBUG: Pickup position en DB: {cr.pickup_position}")
+            evaluate_and_update_trip_state(session, cr.id, near_position)
+            session.refresh(cr)
+            print(f"🔍 DEBUG: Estado después de evaluación cerca: {cr.status}")
+            assert cr.status == StatusEnum.ARRIVED  # Debe cambiar a ARRIVED
+            assert cr.arrived_position_lat == near_position['lat']
+            assert cr.arrived_position_lng == near_position['lng']
+
+            print(f"✅ Transición automática ON_THE_WAY → ARRIVED exitosa")
+            print(f"   - Estado final: {cr.status}")
+            print(
+                f"   - Posición ARRIVED guardada: ({cr.arrived_position_lat}, {cr.arrived_position_lng})")
+
+    except Exception as e:
+        print(f"\n❌ ERROR EN TEST ON_THE_WAY → ARRIVED:")
+        print(f"Tipo de error: {type(e).__name__}")
+        print(f"Mensaje: {str(e)}")
+        print("=== TRACEBACK COMPLETO ===")
+        traceback.print_exc()
+        print("=== FIN TRACEBACK ===")
+        raise
+
+
+def test_automatic_transition_arrived_to_travelling():
+    """
+    Prueba que la transición de ARRIVED a TRAVELLING ocurre automáticamente
+    cuando el conductor se aleja más de 50 metros del punto donde llegó.
+    """
+    import traceback
+    from app.services.client_requests_service import evaluate_and_update_trip_state
+    from app.models.client_request import StatusEnum
+    from app.test.test_drivers import create_and_approve_driver
+    from sqlmodel import Session
+    from app.core.db import engine
+    from uuid import UUID
+
+    try:
+        # 1. Crear y autenticar cliente
+        phone_number = "3011234802"
+        country_code = "+57"
+        user_data = {
+            "full_name": "Cliente Test Arrived",
+            "country_code": country_code,
+            "phone_number": phone_number
+        }
+        print(f"🔍 DEBUG: Intentando crear usuario con datos: {user_data}")
+        create_user_resp = client.post("/users/", json=user_data)
+        print(f"🔍 DEBUG: Status code: {create_user_resp.status_code}")
+        print(f"🔍 DEBUG: Response body: {create_user_resp.text}")
+
+        if create_user_resp.status_code != 201:
+            print(f"❌ ERROR: Falló la creación del usuario")
+            print(f"   Status: {create_user_resp.status_code}")
+            print(f"   Response: {create_user_resp.text}")
+            assert create_user_resp.status_code == 201
+
+        send_resp = client.post(
+            f"/auth/verify/{country_code}/{phone_number}/send")
+        assert send_resp.status_code == 201
+        code = send_resp.json()["message"].split()[-1]
+        verify_resp = client.post(
+            f"/auth/verify/{country_code}/{phone_number}/code",
+            json={"code": code}
+        )
+        assert verify_resp.status_code == 200
+        token = verify_resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # 2. Crear y aprobar conductor
+        driver_phone = "3011234803"
+        driver_country_code = "+57"
+        driver_token, driver_id = create_and_approve_driver(
+            client, driver_phone, driver_country_code)
+
+        # 3. Crear solicitud de viaje vía API
+        request_data = {
+            "fare_offered": 20000,
+            "pickup_description": "Test Pickup ARRIVED",
+            "destination_description": "Test Destination ARRIVED",
+            "pickup_lat": 4.700000,
+            "pickup_lng": -74.100000,
+            "destination_lat": 4.710000,
+            "destination_lng": -74.110000,
+            "type_service_id": 1,
+            "payment_method_id": 1
+        }
+        create_resp = client.post(
+            "/client-request/", json=request_data, headers=headers)
+        assert create_resp.status_code == 201
+        client_request_id = create_resp.json()["id"]
+
+        # 4. Asignar el conductor a la solicitud
+        assign_data = {
+            "id_client_request": client_request_id,
+            "id_driver": str(driver_id),
+            "fare_assigned": 25000
+        }
+        assign_resp = client.patch(
+            "/client-request/updateDriverAssigned", json=assign_data, headers=headers)
+        assert assign_resp.status_code == 200
+
+        # 5. Poner el estado en ARRIVED manualmente (simular que ya pasó ON_THE_WAY → ARRIVED)
+        with Session(engine) as session:
+            from app.models.client_request import ClientRequest
+            cr = session.get(ClientRequest, UUID(client_request_id))
+            cr.status = StatusEnum.ARRIVED
+            # Simular que ya tiene posición de llegada guardada
+            cr.arrived_position_lat = 4.700100
+            cr.arrived_position_lng = -74.100100
+            session.add(cr)
+            session.commit()
+            session.refresh(cr)
+
+            # 6. Simular posición cerca del punto de llegada (menos de 50m)
+            near_position = {'lat': 4.700150,
+                             'lng': -74.100150}  # Cerca del punto de llegada
+            print(f"🔍 DEBUG: Estado antes de evaluación cerca: {cr.status}")
+            evaluate_and_update_trip_state(session, cr.id, near_position)
+            session.refresh(cr)
+            print(f"🔍 DEBUG: Estado después de evaluación cerca: {cr.status}")
+            assert cr.status == StatusEnum.ARRIVED  # Debe seguir en ARRIVED
+
+            # 7. Simular que el conductor se aleja del punto de llegada (más de 50m)
+            far_position = {'lat': 4.700800,
+                            'lng': -74.100800}  # Lejos del punto de llegada
+            print(f"🔍 DEBUG: Estado antes de evaluación lejos: {cr.status}")
+            print(
+                f"🔍 DEBUG: Posición lejos del punto de llegada: {far_position}")
+            print(
+                f"🔍 DEBUG: Arrived position en DB: ({cr.arrived_position_lat}, {cr.arrived_position_lng})")
+            evaluate_and_update_trip_state(session, cr.id, far_position)
+            session.refresh(cr)
+            print(f"🔍 DEBUG: Estado después de evaluación lejos: {cr.status}")
+            assert cr.status == StatusEnum.TRAVELLING  # Debe cambiar a TRAVELLING
+
+            print(f"✅ Transición automática ARRIVED → TRAVELLING exitosa")
+            print(f"   - Estado final: {cr.status}")
+
+    except Exception as e:
+        print(f"\n❌ ERROR EN TEST ARRIVED → TRAVELLING:")
+        print(f"Tipo de error: {type(e).__name__}")
+        print(f"Mensaje: {str(e)}")
+        print("=== TRACEBACK COMPLETO ===")
+        traceback.print_exc()
+        print("=== FIN TRACEBACK ===")
+        raise
+
+
+def test_automatic_transition_travelling_to_finished():
+    """
+    Prueba que la transición de TRAVELLING a FINISHED ocurre automáticamente
+    cuando el conductor está a menos de 50 metros del destino.
+    """
+    import traceback
+    from app.services.client_requests_service import evaluate_and_update_trip_state
+    from app.models.client_request import StatusEnum
+    from app.test.test_drivers import create_and_approve_driver
+    from sqlmodel import Session
+    from app.core.db import engine
+    from uuid import UUID
+
+    try:
+        # 1. Crear y autenticar cliente
+        phone_number = "3011234804"
+        country_code = "+57"
+        user_data = {
+            "full_name": "Cliente Test Travelling",
+            "country_code": country_code,
+            "phone_number": phone_number
+        }
+        print(f"🔍 DEBUG: Intentando crear usuario con datos: {user_data}")
+        create_user_resp = client.post("/users/", json=user_data)
+        print(f"🔍 DEBUG: Status code: {create_user_resp.status_code}")
+        print(f"🔍 DEBUG: Response body: {create_user_resp.text}")
+
+        if create_user_resp.status_code != 201:
+            print(f"❌ ERROR: Falló la creación del usuario")
+            print(f"   Status: {create_user_resp.status_code}")
+            print(f"   Response: {create_user_resp.text}")
+            assert create_user_resp.status_code == 201
+
+        send_resp = client.post(
+            f"/auth/verify/{country_code}/{phone_number}/send")
+        assert send_resp.status_code == 201
+        code = send_resp.json()["message"].split()[-1]
+        verify_resp = client.post(
+            f"/auth/verify/{country_code}/{phone_number}/code",
+            json={"code": code}
+        )
+        assert verify_resp.status_code == 200
+        token = verify_resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # 2. Crear y aprobar conductor
+        driver_phone = "3011234805"
+        driver_country_code = "+57"
+        driver_token, driver_id = create_and_approve_driver(
+            client, driver_phone, driver_country_code)
+
+        # 3. Crear solicitud de viaje vía API
+        request_data = {
+            "fare_offered": 20000,
+            "pickup_description": "Test Pickup TRAVELLING",
+            "destination_description": "Test Destination TRAVELLING",
+            "pickup_lat": 4.700000,
+            "pickup_lng": -74.100000,
+            "destination_lat": 4.710000,
+            "destination_lng": -74.110000,
+            "type_service_id": 1,
+            "payment_method_id": 1
+        }
+        create_resp = client.post(
+            "/client-request/", json=request_data, headers=headers)
+        assert create_resp.status_code == 201
+        client_request_id = create_resp.json()["id"]
+
+        # 4. Asignar el conductor a la solicitud
+        assign_data = {
+            "id_client_request": client_request_id,
+            "id_driver": str(driver_id),
+            "fare_assigned": 25000
+        }
+        assign_resp = client.patch(
+            "/client-request/updateDriverAssigned", json=assign_data, headers=headers)
+        assert assign_resp.status_code == 200
+
+        # 5. Poner el estado en TRAVELLING manualmente (simular que ya pasó ARRIVED → TRAVELLING)
+        with Session(engine) as session:
+            from app.models.client_request import ClientRequest
+            cr = session.get(ClientRequest, UUID(client_request_id))
+            cr.status = StatusEnum.TRAVELLING
+            # Simular que ya tiene posición de llegada guardada
+            cr.arrived_position_lat = 4.700100
+            cr.arrived_position_lng = -74.100100
+            session.add(cr)
+            session.commit()
+            session.refresh(cr)
+
+            # 6. Simular posición lejos del destino (más de 50m)
+            far_position = {'lat': 4.705000,
+                            'lng': -74.105000}  # Lejos del destino
+            print(f"🔍 DEBUG: Estado antes de evaluación lejos: {cr.status}")
+            evaluate_and_update_trip_state(session, cr.id, far_position)
+            session.refresh(cr)
+            print(f"🔍 DEBUG: Estado después de evaluación lejos: {cr.status}")
+            assert cr.status == StatusEnum.TRAVELLING  # Debe seguir en TRAVELLING
+
+            # 7. Simular que el conductor se acerca al destino (menos de 50m)
+            near_position = {'lat': 4.709800,
+                             'lng': -74.109800}  # Cerca del destino
+            print(f"🔍 DEBUG: Estado antes de evaluación cerca: {cr.status}")
+            print(f"🔍 DEBUG: Posición cerca del destino: {near_position}")
+            print(
+                f"🔍 DEBUG: Destination position en DB: {cr.destination_position}")
+            evaluate_and_update_trip_state(session, cr.id, near_position)
+            session.refresh(cr)
+            print(f"🔍 DEBUG: Estado después de evaluación cerca: {cr.status}")
+            assert cr.status == StatusEnum.FINISHED  # Debe cambiar a FINISHED
+
+            print(f"✅ Transición automática TRAVELLING → FINISHED exitosa")
+            print(f"   - Estado final: {cr.status}")
+
+    except Exception as e:
+        print(f"\n❌ ERROR EN TEST TRAVELLING → FINISHED:")
         print(f"Tipo de error: {type(e).__name__}")
         print(f"Mensaje: {str(e)}")
         print("=== TRACEBACK COMPLETO ===")

@@ -53,6 +53,50 @@ async def change_driver_position(sid, data):
         }
     )
 
+    # --- INTEGRACIÓN DE LÓGICA DE TRANSICIÓN AUTOMÁTICA ---
+    try:
+        from app.services.client_requests_service import evaluate_and_update_trip_state
+        from app.core.db import get_session
+        from app.services.notification_service import NotificationService
+        from app.models.client_request import ClientRequest
+        from uuid import UUID
+
+        session = next(get_session())
+        # data debe incluir id_client_request y la posición
+        client_request_id = UUID(data['id_client_request'])
+        driver_position = {'lat': data['lat'], 'lng': data['lng']}
+        new_status = evaluate_and_update_trip_state(
+            session, client_request_id, driver_position)
+
+        if new_status:
+            # Emitir evento WebSocket de actualización de estado
+            await sio.emit(
+                f'new_status_trip/{str(client_request_id)}',
+                {
+                    'id_socket': sid,
+                    'status': new_status,
+                    'id_client_request': str(client_request_id)
+                }
+            )
+            # Enviar notificación push a cliente y conductor
+            client_request = session.get(ClientRequest, client_request_id)
+            notification_service = NotificationService(session)
+            # Notificar al cliente
+            notification_service.send_push_notification(
+                user_id=client_request.id_client,
+                title='Estado del viaje actualizado',
+                body=f'El estado del viaje cambió a {new_status}'
+            )
+            # Notificar al conductor
+            if client_request.id_driver_assigned:
+                notification_service.send_push_notification(
+                    user_id=client_request.id_driver_assigned,
+                    title='Estado del viaje actualizado',
+                    body=f'El estado del viaje cambió a {new_status}'
+                )
+    except Exception as e:
+        print(f'Error en transición automática de estado: {e}')
+
 
 @sio.event
 async def new_client_request(sid, data):

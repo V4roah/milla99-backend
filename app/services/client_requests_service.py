@@ -2513,3 +2513,120 @@ def assign_busy_driver_with_validation(session: Session, client_request_id: UUID
             status_code=500,
             detail=f"Error al asignar el conductor ocupado: {str(e)}"
         )
+
+
+def evaluate_and_update_trip_state(session, client_request_id, driver_position):
+    """
+    Evalúa y actualiza el estado del viaje automáticamente según la posición del conductor.
+    driver_position: dict con 'lat' y 'lng'
+    """
+    from app.models.client_request import ClientRequest, StatusEnum
+    from app.utils.geo_utils import get_distance_meters
+    import pytz
+    from datetime import datetime
+
+    # Obtener la solicitud de viaje
+    client_request = session.get(ClientRequest, client_request_id)
+    if not client_request or not client_request.id_driver_assigned:
+        return None  # No hay viaje o conductor asignado
+
+    current_status = client_request.status
+    updated = False
+    now = datetime.now(pytz.timezone("America/Bogota"))
+
+    # Transición ACCEPTED → ON_THE_WAY
+    if current_status == StatusEnum.ACCEPTED:
+        # Guardar la posición de aceptación si no existe
+        if client_request.accepted_position_lat is None or client_request.accepted_position_lng is None:
+            client_request.accepted_position_lat = driver_position['lat']
+            client_request.accepted_position_lng = driver_position['lng']
+            session.add(client_request)
+            session.commit()
+        else:
+            # Calcular distancia desde la posición de aceptación
+            distance = get_distance_meters(
+                client_request.accepted_position_lat,
+                client_request.accepted_position_lng,
+                driver_position['lat'],
+                driver_position['lng']
+            )
+            if distance > 50:
+                client_request.status = StatusEnum.ON_THE_WAY
+                updated = True
+
+    # Transición ON_THE_WAY → ARRIVED
+    elif current_status == StatusEnum.ON_THE_WAY:
+        # Calcular distancia al punto de recogida
+        pickup_coords = None
+        print(f"🔍 DEBUG evaluate_and_update_trip_state: Estado actual: {current_status}")
+        print(f"🔍 DEBUG evaluate_and_update_trip_state: pickup_position existe: {hasattr(client_request, 'pickup_position')}")
+        print(f"🔍 DEBUG evaluate_and_update_trip_state: pickup_position es None: {client_request.pickup_position is None}")
+        
+        if hasattr(client_request, 'pickup_position') and client_request.pickup_position is not None:
+            from app.utils.geo_utils import wkb_to_coords
+            pickup_coords = wkb_to_coords(client_request.pickup_position)
+            print(f"🔍 DEBUG evaluate_and_update_trip_state: pickup_coords extraídas: {pickup_coords}")
+        
+        if pickup_coords:
+            distance = get_distance_meters(
+                pickup_coords['lat'],
+                pickup_coords['lng'],
+                driver_position['lat'],
+                driver_position['lng']
+            )
+            print(f"🔍 DEBUG evaluate_and_update_trip_state: Distancia calculada: {distance} metros")
+            print(f"🔍 DEBUG evaluate_and_update_trip_state: Driver position: {driver_position}")
+            print(f"🔍 DEBUG evaluate_and_update_trip_state: Pickup coords: {pickup_coords}")
+            
+            if distance < 50:
+                print(f"🔍 DEBUG evaluate_and_update_trip_state: ¡Distancia < 50m! Cambiando a ARRIVED")
+                client_request.status = StatusEnum.ARRIVED
+                client_request.arrived_position_lat = driver_position['lat']
+                client_request.arrived_position_lng = driver_position['lng']
+                updated = True
+            else:
+                print(f"🔍 DEBUG evaluate_and_update_trip_state: Distancia {distance}m >= 50m, manteniendo ON_THE_WAY")
+        else:
+            print(f"🔍 DEBUG evaluate_and_update_trip_state: No se pudieron obtener pickup_coords")
+
+    # Transición ARRIVED → TRAVELLING
+    elif current_status == StatusEnum.ARRIVED:
+        if client_request.arrived_position_lat is not None and client_request.arrived_position_lng is not None:
+            distance = get_distance_meters(
+                client_request.arrived_position_lat,
+                client_request.arrived_position_lng,
+                driver_position['lat'],
+                driver_position['lng']
+            )
+            if distance > 50:
+                client_request.status = StatusEnum.TRAVELLING
+                updated = True
+
+    # Transición TRAVELLING → FINISHED
+    elif current_status == StatusEnum.TRAVELLING:
+        # Calcular distancia al destino
+        destination_coords = None
+        if hasattr(client_request, 'destination_position') and client_request.destination_position is not None:
+            from app.utils.geo_utils import wkb_to_coords
+            destination_coords = wkb_to_coords(
+                client_request.destination_position)
+        if destination_coords:
+            distance = get_distance_meters(
+                destination_coords['lat'],
+                destination_coords['lng'],
+                driver_position['lat'],
+                driver_position['lng']
+            )
+            if distance < 50:
+                client_request.status = StatusEnum.FINISHED
+                updated = True
+
+    if updated:
+        client_request.updated_at = now
+        session.add(client_request)
+        session.commit()
+        # Aquí se pueden emitir eventos y notificaciones
+        # Por ejemplo: emitir evento WebSocket update_status_trip
+        # y notificar a cliente y conductor
+        return client_request.status
+    return None

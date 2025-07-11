@@ -38,7 +38,8 @@ class ClientRequestCreate(SQLModel):
 
 class StatusEnum(str, enum.Enum):
     CREATED = "CREATED"
-    PENDING = "PENDING"  # Solicitud asignada a conductor ocupado, esperando que termine su viaje actual
+    # Solicitud asignada a conductor ocupado, esperando que termine su viaje actual
+    PENDING = "PENDING"
     ACCEPTED = "ACCEPTED"
     ARRIVED = "ARRIVED"
     ON_THE_WAY = "ON_THE_WAY"
@@ -82,6 +83,16 @@ class ClientRequest(SQLModel, table=True):
         sa_column=Column(Geometry(geometry_type="POINT", srid=4326)))
     destination_position: Optional[object] = Field(
         sa_column=Column(Geometry(geometry_type="POINT", srid=4326)))
+
+    # Campos para posiciones clave de transición automática
+    accepted_position_lat: Optional[float] = Field(
+        default=None, description="Latitud donde el conductor aceptó el viaje")
+    accepted_position_lng: Optional[float] = Field(
+        default=None, description="Longitud donde el conductor aceptó el viaje")
+    arrived_position_lat: Optional[float] = Field(
+        default=None, description="Latitud donde el conductor fue marcado como ARRIVED")
+    arrived_position_lng: Optional[float] = Field(
+        default=None, description="Longitud donde el conductor fue marcado como ARRIVED")
 
     # Campos para gestión de conductores ocupados
     assigned_busy_driver_id: Optional[UUID] = Field(

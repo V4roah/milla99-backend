@@ -124,7 +124,10 @@ async def get_current_stop_info(
     "/{stop_id}/status",
     status_code=200,
     description="""
-Propósito: Permite al conductor actualizar el estado de una parada (por ejemplo, marcar como ARRIVED o COMPLETED).
+⚠️ Este endpoint está destinado únicamente para casos de emergencia o cuando la actualización automática por GPS falle.
+El flujo normal del sistema es automático y no requiere intervención manual.
+
+Permite al conductor actualizar el estado de una parada (por ejemplo, marcar como ARRIVED o COMPLETED).
 
 **Permisos de Acceso:**
 - Solo el conductor asignado puede actualizar el estado de las paradas.

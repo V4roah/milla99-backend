@@ -2,6 +2,7 @@ from geoalchemy2.shape import to_shape
 import requests
 from typing import Optional
 from app.core.config import settings
+import math
 
 
 def wkb_to_coords(wkb):
@@ -102,3 +103,40 @@ def get_time_and_distance_from_google(origin_lat, origin_lng, destination_lat, d
     except Exception as e:
         print(f"❌ DEBUG GOOGLE API: Error inesperado: {e}")
         return None, None
+
+
+def get_distance_meters(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """
+    Calcula la distancia en metros entre dos puntos geográficos usando la fórmula de Haversine.
+
+    Args:
+        lat1: Latitud del primer punto
+        lng1: Longitud del primer punto  
+        lat2: Latitud del segundo punto
+        lng2: Longitud del segundo punto
+
+    Returns:
+        float: Distancia en metros entre los dos puntos
+    """
+    # Radio de la Tierra en metros
+    R = 6371000
+
+    # Convertir coordenadas a radianes
+    lat1_rad = math.radians(lat1)
+    lng1_rad = math.radians(lng1)
+    lat2_rad = math.radians(lat2)
+    lng2_rad = math.radians(lng2)
+
+    # Diferencias en coordenadas
+    dlat = lat2_rad - lat1_rad
+    dlng = lng2_rad - lng1_rad
+
+    # Fórmula de Haversine
+    a = math.sin(dlat/2)**2 + math.cos(lat1_rad) * \
+        math.cos(lat2_rad) * math.sin(dlng/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+
+    # Distancia en metros
+    distance = R * c
+
+    return distance
