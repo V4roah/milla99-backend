@@ -342,7 +342,6 @@ def get_nearby_drivers(
     """
     Endpoint para obtener conductores cercanos a un cliente.
     """
-    import traceback as tb
     try:
         # Verificar que el usuario es CLIENT
         user_id = request.state.user_id
@@ -378,11 +377,11 @@ def get_nearby_drivers(
 
     except HTTPException as e:
         print(f"[HTTPException] {e.detail}")
-        print(tb.format_exc())
+        print(traceback.format_exc())
         raise e
     except Exception as e:
         print(f"[ERROR] Exception en get_nearby_drivers: {str(e)}")
-        print(tb.format_exc())
+        print(traceback.format_exc())
         raise HTTPException(
             status_code=500,
             detail=f"Error al buscar conductores cercanos: {str(e)}"
@@ -703,11 +702,11 @@ def assign_driver(
         )
     except HTTPException as e:
         print("[HTTPException]", e.detail)
-        print(tb.format_exc())
+        print(traceback.format_exc())
         raise e
     except Exception as e:
         print("[ERROR] Exception en assign_driver:")
-        print(tb.format_exc())
+        print(traceback.format_exc())
         raise HTTPException(
             status_code=500,
             detail=f"Error al asignar el conductor: {str(e)}"

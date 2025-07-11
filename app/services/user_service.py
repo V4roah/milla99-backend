@@ -51,70 +51,71 @@ class UserService:
             else:
                 raise ValueError("Número de teléfono inválido.")
 
-        with self.session.begin():
-            # Check for existing phone (country_code + phone_number)
-            existing_user = self.session.exec(
+        # Verificar si ya existe un usuario con el mismo número de teléfono
+        existing_user = self.session.exec(
+            select(User).where(
+                User.country_code == user_data.country_code,
+                User.phone_number == user_data.phone_number
+            )
+        ).first()
+
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="User with this phone number already exists."
+            )
+
+        # Crear el nuevo usuario
+        user = User.model_validate(user_data.model_dump())
+        self.session.add(user)
+        self.session.flush()  # Para obtener el id antes del commit
+
+        # Buscar y asignar el rol CLIENT por defecto
+        client_role = self.session.exec(
+            select(Role).where(Role.id == "CLIENT")).first()
+        if not client_role:
+            raise HTTPException(
+                status_code=500, detail="Rol CLIENT no existe")
+
+        # Asignar el rol CLIENT al usuario
+        user.roles.append(client_role)
+
+        # Si hay un referido, validarlo y crear la relación de referido
+        if user_data.referral_phone:
+            referral_user = self.session.exec(
                 select(User).where(
-                    User.country_code == user_data.country_code,
-                    User.phone_number == user_data.phone_number
+                    User.phone_number == user_data.referral_phone
                 )
             ).first()
+            if referral_user:
+                referral = Referral(
+                    user_id=user.id, referred_by_id=referral_user.id)
+                self.session.add(referral)
 
-            if existing_user:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="User with this phone number already exists."
-                )
+        # Actualizar el estado de la relación de roles
+        user_role = self.session.exec(
+            select(UserHasRole).where(
+                UserHasRole.id_user == user.id,
+                UserHasRole.id_rol == client_role.id
+            )
+        ).first()
+        if user_role:
+            user_role.is_verified = True
+            user_role.status = RoleStatus.APPROVED
+            user_role.verified_at = datetime.utcnow()
+            self.session.add(user_role)
 
-            user = User.model_validate(user_data.model_dump())
-            self.session.add(user)
-            self.session.flush()  # Para obtener el id antes del commit
+        self.session.add(user)
 
-            # Asignar el rol CLIENT por defecto
-            client_role = self.session.exec(
-                select(Role).where(Role.id == "CLIENT")).first()
-            if not client_role:
-                raise HTTPException(
-                    status_code=500, detail="Rol CLIENT no existe")
+        # Crear VerifyMount con saldo inicial de 0 si no existe
+        verify_mount = self.session.exec(
+            select(VerifyMount).where(VerifyMount.user_id == user.id)
+        ).first()
+        if not verify_mount:
+            verify_mount = VerifyMount(user_id=user.id, mount=0)
+            self.session.add(verify_mount)
 
-            # La relación se crea automáticamente a través del link_model
-            user.roles.append(client_role)
-
-            # Si hay un  referido, validarlo y crear la relación de referido
-            if user_data.referral_phone:
-                referral_user = self.session.exec(
-                    select(User).where(
-                        User.phone_number == user_data.referral_phone
-                    )
-                ).first()
-                if referral_user:
-                    referral = Referral(
-                        user_id=user.id, referred_by_id=referral_user.id)
-                    self.session.add(referral)
-
-            # Actualizar el estado de la relación a través del link_model
-            user_role = self.session.exec(
-                select(UserHasRole).where(
-                    UserHasRole.id_user == user.id,
-                    UserHasRole.id_rol == client_role.id
-                )
-            ).first()
-            if user_role:
-                user_role.is_verified = True
-                user_role.status = RoleStatus.APPROVED
-                user_role.verified_at = datetime.utcnow()
-                self.session.add(user_role)
-
-            self.session.add(user)
-            # El commit se hace automáticamente al salir del with
-
-            # Crear VerifyMount con mount=0 si no existe
-            verify_mount = self.session.exec(
-                select(VerifyMount).where(VerifyMount.user_id == user.id)
-            ).first()
-            if not verify_mount:
-                verify_mount = VerifyMount(user_id=user.id, mount=0)
-                self.session.add(verify_mount)
+        self.session.commit()
 
         return user
 

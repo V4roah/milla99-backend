@@ -63,14 +63,14 @@ class DriverService:
                     if not driver_role:
                         raise HTTPException(
                             status_code=500, detail="Rol DRIVER no existe")
-                    
+
                     # Verificar si ya tiene rol CLIENT
                     client_role = session.exec(
                         select(Role).where(Role.id == "CLIENT")).first()
                     if not client_role:
                         raise HTTPException(
                             status_code=500, detail="Rol CLIENT no existe")
-                    
+
                     # Verificar si ya tiene rol DRIVER asignado
                     existing_driver_role = session.exec(
                         select(UserHasRole).where(
@@ -78,7 +78,7 @@ class DriverService:
                             UserHasRole.id_rol == "DRIVER"
                         )
                     ).first()
-                    
+
                     # Verificar si ya tiene rol CLIENT asignado
                     existing_client_role = session.exec(
                         select(UserHasRole).where(
@@ -86,7 +86,7 @@ class DriverService:
                             UserHasRole.id_rol == "CLIENT"
                         )
                     ).first()
-                    
+
                     if existing_driver_role:
                         # Ya es conductor, verificar si ya tiene driver_info
                         existing_driver = session.exec(
@@ -112,12 +112,12 @@ class DriverService:
                     else:
                         # Asignar el rol DRIVER
                         existing_user.roles.append(driver_role)
-                        
+
                         # Si no tiene rol CLIENT, asignarlo también
                         if not existing_client_role:
                             existing_user.roles.append(client_role)
                             print("Rol CLIENT asignado automáticamente al conductor")
-                        
+
                         session.add(existing_user)
                         session.commit()
                         session.refresh(existing_user)
@@ -147,14 +147,14 @@ class DriverService:
                     if not driver_role:
                         raise HTTPException(
                             status_code=500, detail="Rol DRIVER no existe")
-                    
+
                     # Asignar el rol CLIENT también
                     client_role = session.exec(
                         select(Role).where(Role.id == "CLIENT")).first()
                     if not client_role:
                         raise HTTPException(
                             status_code=500, detail="Rol CLIENT no existe")
-                    
+
                     # Asignar ambos roles
                     user.roles.append(driver_role)
                     user.roles.append(client_role)
@@ -568,7 +568,7 @@ class DriverService:
                 DriverTripOffer.id_client_request == client_request.id,
                 DriverTripOffer.id_driver == user_id
             ).first()
-            
+
             if accepted_offer:
                 # Usar el precio de la oferta aceptada
                 client_request.fare_assigned = accepted_offer.fare_offer

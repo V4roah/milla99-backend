@@ -487,24 +487,36 @@ async def accept_pending_request(
         session: Sesión de base de datos
         current_user: Usuario autenticado
     """
+    import traceback
     try:
+        print(f"🔍 DEBUG: accept_pending_request endpoint llamado")
+        print(f"   - client_request_id: {client_request_id}")
+
         # Obtener el user_id desde el token
         user_id = request.state.user_id
+        print(f"   - user_id del token: {user_id}")
 
-        # Usar el servicio para completar la solicitud pendiente
+        # Usar el servicio para aceptar la solicitud pendiente
         service = DriverService(session)
-        success = service.complete_pending_request(user_id)
+        print(
+            f"   - Llamando service.accept_pending_request({user_id}, {client_request_id})")
+        success = service.accept_pending_request(user_id, client_request_id)
+        print(f"   - Resultado del servicio: {success}")
 
         if success:
+            print(f"✅ Solicitud pendiente aceptada correctamente")
             return {"message": "Solicitud pendiente aceptada correctamente"}
         else:
+            print(f"❌ No se pudo aceptar la solicitud pendiente")
             raise HTTPException(
                 status_code=400, detail="No se pudo aceptar la solicitud pendiente")
 
     except HTTPException:
+        print(f"⚠️ HTTPException capturada y re-lanzada")
         raise
     except Exception as e:
-        print(f"Error aceptando solicitud pendiente: {e}")
+        print(f"❌ Error aceptando solicitud pendiente: {e}")
+        print(f"   - Traceback completo:")
         traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
