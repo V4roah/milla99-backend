@@ -7,6 +7,7 @@ from ..models.w_verification import Verification, VerificationCreate
 from ..models.user import User, VehicleTypeRead, VehicleInfoRead, UserRead, RoleRead, DriverInfoRead
 from ..models.vehicle_info import VehicleInfo
 from ..models.driver_info import DriverInfo
+from ..models.user_has_roles import UserHasRole, RoleStatus
 from ..core.config import settings
 from jose import jwt
 import clicksend_client
@@ -249,6 +250,25 @@ class AuthService:
         roles_data = [RoleRead.model_validate(
             role, from_attributes=True) for role in user.roles]
 
+        # Calcular is_driver_approved
+        driver_role_approved = self.session.exec(
+            select(UserHasRole).where(
+                UserHasRole.id_user == user.id,
+                UserHasRole.id_rol == "DRIVER",
+                UserHasRole.status == RoleStatus.APPROVED
+            )
+        ).first()
+
+        has_driver_role = self.session.exec(
+            select(UserHasRole).where(
+                UserHasRole.id_user == user.id,
+                UserHasRole.id_rol == "DRIVER"
+            )
+        ).first()
+
+        is_driver_approved = bool(
+            driver_role_approved) if has_driver_role and driver_role_approved else False
+
         # Construir el usuario de respuesta
         user_data = UserRead(
             id=user.id,
@@ -259,7 +279,8 @@ class AuthService:
             full_name=user.full_name,
             roles=roles_data,
             vehicle_info=vehicle_info_data,
-            driver_info=driver_info_data
+            driver_info=driver_info_data,
+            is_driver_approved=is_driver_approved
         )
 
         return True, access_token, refresh_token, user_data

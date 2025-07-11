@@ -174,7 +174,7 @@ class UserService:
             "selfie_url": user.selfie_url,
             "roles": user.roles,  # Incluir los roles cargados
             "driver_info": user.driver_info,  # Incluir driver_info cargado
-            "is_driver_approved": bool(driver_role) if has_driver_role else None
+            "is_driver_approved": bool(driver_role) if has_driver_role and driver_role else False
         }
 
         # Usar UserRead para la respuesta
