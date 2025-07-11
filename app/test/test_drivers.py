@@ -461,39 +461,15 @@ def create_and_approve_driver(client, phone_number, country_code):
                     f"El usuario {phone_number} existe pero no tiene el rol de DRIVER.")
 
             if driver_role.status != RoleStatus.APPROVED:
-                # Buscar el rol DRIVER de manera más robusta
-                driver_role = session.exec(select(UserHasRole).where(
-                    UserHasRole.id_user == driver_id, UserHasRole.id_rol == "DRIVER")).first()
-
-                # Si no se encuentra, intentar crear el rol manualmente
-                if driver_role is None:
-                    print(
-                        f"Rol DRIVER no encontrado para usuario {driver_id}, creándolo manualmente...")
-                    try:
-                        driver_role = UserHasRole(
-                            id_user=driver_id,
-                            id_rol="DRIVER",
-                            status=RoleStatus.PENDING
-                        )
-                        session.add(driver_role)
-                        session.commit()
-                        session.refresh(driver_role)
-                        print("Rol DRIVER creado manualmente")
-                    except Exception as e:
-                        print(f"Error creando rol manualmente: {e}")
-                        # Si falla, intentar buscar de nuevo (puede que se haya creado en otro proceso)
-                        session.rollback()
-                        driver_role = session.exec(select(UserHasRole).where(
-                            UserHasRole.id_user == driver_id, UserHasRole.id_rol == "DRIVER")).first()
-                        if driver_role is None:
-                            raise Exception(
-                                f"No se pudo crear ni encontrar el rol DRIVER para usuario {driver_id}")
-                        print("Rol DRIVER encontrado después del rollback")
-
-                assert driver_role is not None
+                # Simplemente actualizar el status a APPROVED
                 driver_role.status = RoleStatus.APPROVED
                 session.add(driver_role)
                 session.commit()
+                print(
+                    f"✅ Rol DRIVER actualizado a APPROVED para usuario {driver_id}")
+            else:
+                print(
+                    f"✅ Rol DRIVER ya está APPROVED para usuario {driver_id}")
         else:
             # Si el usuario no existe, lo creamos desde cero
             user_data = {
@@ -548,15 +524,23 @@ def create_and_approve_driver(client, phone_number, country_code):
                 print(
                     f"Rol DRIVER no encontrado para usuario {driver_id}, creándolo manualmente...")
                 try:
-                    driver_role = UserHasRole(
-                        id_user=driver_id,
-                        id_rol="DRIVER",
-                        status=RoleStatus.PENDING
-                    )
-                    session.add(driver_role)
-                    session.commit()
-                    session.refresh(driver_role)
-                    print("Rol DRIVER creado manualmente")
+                    # Verificar si ya existe el rol antes de crear
+                    existing_role = session.exec(select(UserHasRole).where(
+                        UserHasRole.id_user == driver_id, UserHasRole.id_rol == "DRIVER")).first()
+                    
+                    if existing_role is None:
+                        driver_role = UserHasRole(
+                            id_user=driver_id,
+                            id_rol="DRIVER",
+                            status=RoleStatus.PENDING
+                        )
+                        session.add(driver_role)
+                        session.commit()
+                        session.refresh(driver_role)
+                        print("Rol DRIVER creado manualmente")
+                    else:
+                        driver_role = existing_role
+                        print("Rol DRIVER encontrado después de verificación adicional")
                 except Exception as e:
                     print(f"Error creando rol manualmente: {e}")
                     # Si falla, intentar buscar de nuevo (puede que se haya creado en otro proceso)

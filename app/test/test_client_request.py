@@ -2439,11 +2439,24 @@ def test_eta_endpoint_simple():
         from geoalchemy2.shape import from_shape
         from shapely.geometry import Point
         from uuid import UUID
+        from datetime import datetime
         with Session(engine) as db:
             point = from_shape(Point(-74.075000, 4.720000), srid=4326)
-            driver_position = DriverPosition(
-                id_driver=UUID(driver_id), position=point)
-            db.add(driver_position)
+            # Buscar posición existente o crear nueva
+            driver_position = db.query(DriverPosition).filter(
+                DriverPosition.id_driver == driver_id
+            ).first()
+
+            if driver_position:
+                # Actualizar posición existente
+                driver_position.position = point
+                driver_position.updated_at = datetime.now()
+            else:
+                # Crear nueva posición
+                driver_position = DriverPosition(
+                    id_driver=driver_id, position=point)
+                db.add(driver_position)
+
             db.commit()
 
         # 5. Llamar al endpoint ETA

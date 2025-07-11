@@ -2316,9 +2316,37 @@ def get_eta_service(session, client_request_id):
             driver_lat, driver_lng,
             pickup_coords["lat"], pickup_coords["lng"]
         )
+
+        # Si la Google API falla, usar valores por defecto basados en distancia directa
         if distance is None or duration is None:
-            raise Exception(
-                "No se pudo obtener el tiempo y distancia desde Google API")
+            print("⚠️ Google API no disponible, usando cálculo aproximado")
+            # Calcular distancia directa usando fórmula de Haversine
+            from math import radians, cos, sin, asin, sqrt
+
+            def haversine_distance(lat1, lon1, lat2, lon2):
+                """Calcula la distancia entre dos puntos usando fórmula de Haversine"""
+                R = 6371000  # Radio de la Tierra en metros
+
+                lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+                dlat = lat2 - lat1
+                dlon = lon2 - lon1
+
+                a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+                c = 2 * asin(sqrt(a))
+                distance = R * c
+
+                return distance
+
+            # Calcular distancia aproximada
+            distance = haversine_distance(
+                driver_lat, driver_lng, pickup_coords["lat"], pickup_coords["lng"])
+
+            # Estimar tiempo basado en velocidad promedio (30 km/h = 8.33 m/s)
+            avg_speed_ms = 8.33  # metros por segundo
+            duration = distance / avg_speed_ms
+
+            print(
+                f"📏 Distancia calculada: {distance:.0f}m, Tiempo estimado: {duration:.0f}s")
 
         result = {"distance": distance, "duration": duration}
         # Emitir actualización por WebSocket si está disponible

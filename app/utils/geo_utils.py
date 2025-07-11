@@ -65,16 +65,40 @@ def get_time_and_distance_from_google(origin_lat, origin_lng, destination_lat, d
         "units": "metric",
         "key": settings.GOOGLE_API_KEY
     }
+
+    print(f"🔍 DEBUG GOOGLE API: Consultando Distance Matrix")
+    print(f"🔍 DEBUG GOOGLE API: Origen: {origin_lat}, {origin_lng}")
+    print(f"🔍 DEBUG GOOGLE API: Destino: {destination_lat}, {destination_lng}")
+    print(f"🔍 DEBUG GOOGLE API: URL: {url}")
+    print(
+        f"🔍 DEBUG GOOGLE API: API Key configurada: {'Sí' if settings.GOOGLE_API_KEY else 'No'}")
+
     try:
         response = requests.get(url, params=params)
+        print(f"🔍 DEBUG GOOGLE API: Status Code: {response.status_code}")
+
         response.raise_for_status()
         data = response.json()
+        print(f"🔍 DEBUG GOOGLE API: Respuesta: {data}")
+
         if data.get("status") == "OK" and data["rows"][0]["elements"][0]["status"] == "OK":
             distance = data["rows"][0]["elements"][0]["distance"]["value"]
             duration = data["rows"][0]["elements"][0]["duration"]["value"]
+            print(
+                f"✅ DEBUG GOOGLE API: Distancia: {distance}m, Duración: {duration}s")
             return distance, duration
         else:
+            print(
+                f"❌ DEBUG GOOGLE API: Error en respuesta - Status: {data.get('status')}")
+            print(
+                f"❌ DEBUG GOOGLE API: Error message: {data.get('error_message', 'No disponible')}")
+            if data.get("rows") and data["rows"][0].get("elements"):
+                element_status = data["rows"][0]["elements"][0].get("status")
+                print(f"❌ DEBUG GOOGLE API: Element status: {element_status}")
             return None, None
     except requests.exceptions.RequestException as e:
-        print(f"Error al llamar a Google Maps API: {e}")
+        print(f"❌ DEBUG GOOGLE API: Error de red: {e}")
+        return None, None
+    except Exception as e:
+        print(f"❌ DEBUG GOOGLE API: Error inesperado: {e}")
         return None, None
