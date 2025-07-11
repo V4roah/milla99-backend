@@ -358,14 +358,25 @@ def create_all_users(session: Session):
                 if driver_data["phone_number"] == "3001234567":
                     status_for_driver = RoleStatus.PENDING
 
-                user_has_role = UserHasRole(
+                user_has_driver_role = UserHasRole(
                     id_user=user.id,
                     id_rol=driver_role.id,
                     is_verified=True,
                     status=status_for_driver,
                     verified_at=datetime.utcnow()
                 )
-                session.add(user_has_role)
+                session.add(user_has_driver_role)
+
+            # Asignar rol CLIENT también a los conductores
+            if client_role:
+                user_has_client_role = UserHasRole(
+                    id_user=user.id,
+                    id_rol=client_role.id,
+                    is_verified=True,
+                    status=RoleStatus.APPROVED,
+                    verified_at=datetime.utcnow()
+                )
+                session.add(user_has_client_role)
 
             # Crear selfie
             selfie_dir = os.path.join(

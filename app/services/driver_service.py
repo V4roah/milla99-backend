@@ -23,6 +23,7 @@ from app.core.config import settings
 import os
 from app.models.driver_savings import DriverSavings, SavingsType
 from app.models.client_request import ClientRequest, StatusEnum
+from app.models.user_has_roles import UserHasRole, RoleStatus
 from datetime import datetime
 import pytz
 from uuid import UUID
@@ -62,8 +63,32 @@ class DriverService:
                     if not driver_role:
                         raise HTTPException(
                             status_code=500, detail="Rol DRIVER no existe")
-                    if driver_role in existing_user.roles:
-                        # Ya es conductor, puedes lanzar error o continuar
+                    
+                    # Verificar si ya tiene rol CLIENT
+                    client_role = session.exec(
+                        select(Role).where(Role.id == "CLIENT")).first()
+                    if not client_role:
+                        raise HTTPException(
+                            status_code=500, detail="Rol CLIENT no existe")
+                    
+                    # Verificar si ya tiene rol DRIVER asignado
+                    existing_driver_role = session.exec(
+                        select(UserHasRole).where(
+                            UserHasRole.id_user == existing_user.id,
+                            UserHasRole.id_rol == "DRIVER"
+                        )
+                    ).first()
+                    
+                    # Verificar si ya tiene rol CLIENT asignado
+                    existing_client_role = session.exec(
+                        select(UserHasRole).where(
+                            UserHasRole.id_user == existing_user.id,
+                            UserHasRole.id_rol == "CLIENT"
+                        )
+                    ).first()
+                    
+                    if existing_driver_role:
+                        # Ya es conductor, verificar si ya tiene driver_info
                         existing_driver = session.exec(
                             select(DriverInfo)
                             .where(DriverInfo.user_id == existing_user.id)
@@ -87,6 +112,12 @@ class DriverService:
                     else:
                         # Asignar el rol DRIVER
                         existing_user.roles.append(driver_role)
+                        
+                        # Si no tiene rol CLIENT, asignarlo también
+                        if not existing_client_role:
+                            existing_user.roles.append(client_role)
+                            print("Rol CLIENT asignado automáticamente al conductor")
+                        
                         session.add(existing_user)
                         session.commit()
                         session.refresh(existing_user)
@@ -109,18 +140,28 @@ class DriverService:
                     session.refresh(driver_savings)
                     print("DriverSavings creado")
 
-                    print("4. Asignando rol DRIVER...")
+                    print("4. Asignando roles DRIVER y CLIENT...")
                     # Asignar el rol DRIVER
                     driver_role = session.exec(
                         select(Role).where(Role.id == "DRIVER")).first()
                     if not driver_role:
                         raise HTTPException(
                             status_code=500, detail="Rol DRIVER no existe")
+                    
+                    # Asignar el rol CLIENT también
+                    client_role = session.exec(
+                        select(Role).where(Role.id == "CLIENT")).first()
+                    if not client_role:
+                        raise HTTPException(
+                            status_code=500, detail="Rol CLIENT no existe")
+                    
+                    # Asignar ambos roles
                     user.roles.append(driver_role)
+                    user.roles.append(client_role)
                     session.add(user)
                     session.commit()
                     session.refresh(user)
-                    print("Rol DRIVER asignado")
+                    print("Roles DRIVER y CLIENT asignados")
 
                 print("5. Procesando selfie...")
                 # --- SELFIE OBLIGATORIA Y GUARDADO ---
