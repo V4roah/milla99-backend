@@ -203,6 +203,21 @@ class AuthService:
         verification.is_verified = True
         self.session.commit()
 
+        # Aprobar automáticamente el rol CLIENT si está en PENDING
+        client_role = self.session.exec(
+            select(UserHasRole).where(
+                UserHasRole.id_user == user.id,
+                UserHasRole.id_rol == "CLIENT"
+            )
+        ).first()
+        if client_role:
+            if client_role.status == RoleStatus.PENDING:
+                client_role.status = RoleStatus.APPROVED
+            if client_role.status == RoleStatus.APPROVED:
+                client_role.is_verified = True
+            self.session.add(client_role)
+            self.session.commit()
+
         # Actualizar estado de verificación del usuario
         if not user.is_verified_phone:
             user.is_verified_phone = True
