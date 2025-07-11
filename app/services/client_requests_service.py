@@ -366,7 +366,7 @@ def get_client_request_detail_service(session: Session, client_request_id: UUID,
                     session, "driver", cr.id_driver_assigned) if cr.id_driver_assigned else 0.0
                 di = driver.driver_info
                 driver_info = {
-                    "id": di.id,
+                    "id": str(di.id),
                     "first_name": di.first_name,
                     "last_name": di.last_name,
                     "email": di.email,
@@ -378,6 +378,7 @@ def get_client_request_detail_service(session: Session, client_request_id: UUID,
                 if di.vehicle_info:
                     vi = di.vehicle_info
                     vehicle_info = {
+                        "id": str(vi.id),
                         "brand": vi.brand,
                         "model": vi.model,
                         "model_year": vi.model_year,

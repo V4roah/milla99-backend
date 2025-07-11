@@ -366,7 +366,7 @@ def test_assign_driver_to_client_request():
     # Asignar el conductor a la solicitud
     assign_data = {
         "id_client_request": client_request_id,
-        "id_driver": driver_id,
+        "id_driver": str(driver_id),  # Convertir UUID a string
         "fare_assigned": 25000
     }
     assign_resp = client.patch(
@@ -420,7 +420,7 @@ def test_driver_changes_status_to_ontheway():
     # Asignar el conductor a la solicitud
     assign_data = {
         "id_client_request": client_request_id,
-        "id_driver": driver_id,
+        "id_driver": str(driver_id),  # Convertir UUID a string
         "fare_assigned": 25000
     }
     assign_resp = client.patch(
@@ -490,7 +490,7 @@ def test_driver_changes_status_to_arrived():
     # Asignar el conductor a la solicitud
     assign_data = {
         "id_client_request": client_request_id,
-        "id_driver": driver_id,
+        "id_driver": str(driver_id),  # Convertir UUID a string
         "fare_assigned": 25000
     }
     assign_resp = client.patch(
@@ -570,7 +570,7 @@ def test_driver_changes_status_to_travelling():
     # Asignar el conductor a la solicitud
     assign_data = {
         "id_client_request": client_request_id,
-        "id_driver": driver_id,
+        "id_driver": str(driver_id),  # Convertir UUID a string
         "fare_assigned": 25000
     }
     assign_resp = client.patch(
@@ -660,7 +660,7 @@ def test_driver_changes_status_to_finished():
     # Asignar el conductor a la solicitud
     assign_data = {
         "id_client_request": client_request_id,
-        "id_driver": driver_id,
+        "id_driver": str(driver_id),  # Convertir UUID a string
         "fare_assigned": 25000
     }
     assign_resp = client.patch(
@@ -760,7 +760,7 @@ def test_driver_changes_status_to_paid():
     # Asignar el conductor a la solicitud
     assign_data = {
         "id_client_request": client_request_id,
-        "id_driver": driver_id,
+        "id_driver": str(driver_id),  # Convertir UUID a string
         "fare_assigned": 25000
     }
     assign_resp = client.patch(
@@ -870,7 +870,7 @@ def test_driver_cannot_skip_states_to_finished():
     # Asignar el conductor a la solicitud
     assign_data = {
         "id_client_request": client_request_id,
-        "id_driver": driver_id,
+        "id_driver": str(driver_id),  # Convertir UUID a string
         "fare_assigned": 25000
     }
     assign_resp = client.patch(
@@ -1078,7 +1078,7 @@ def test_client_request_timeout():
     assert nearby_resp.status_code == 200
     nearby_data = nearby_resp.json()
     assert len(nearby_data) == 0 or not any(
-        req["id"] == str(client_request_id) for req in nearby_data)
+        req.get("id") == str(client_request_id) for req in nearby_data if isinstance(req, dict))
 
     # Verificar que la solicitud sigue existiendo en la base de datos
     with Session(engine) as session:
@@ -1259,7 +1259,7 @@ def test_nearby_requests_distance_filter():
     print(f"\nSolicitudes de test encontradas: {len(test_requests)}")
     for req in test_requests:
         print(
-            f"- ID: {req['id']}, Distancia: {req.get('distance', 'N/A')} metros")
+            f"- ID: {req.get('id')}, Distancia: {req.get('distance', 'N/A')} metros")
         if req.get('distance') is not None:
             print(
                 f"  Coordenadas: {req.get('pickup_position', {}).get('lat')}, {req.get('pickup_position', {}).get('lng')}")
@@ -1272,11 +1272,11 @@ def test_nearby_requests_distance_filter():
 
     # Verificar que las solicitudes que aparecen están dentro del radio
     for request in test_requests:
-        print(f"\nVerificando solicitud {request['id']}")
+        print(f"\nVerificando solicitud {request.get('id')}")
         # Encontrar la solicitud original para comparar ubicaciones
         original_request = next(
-            (r for r in created_requests if str(r["id"]) == str(request["id"])), None)
-        assert original_request is not None, f"No se encontró la solicitud original para {request['id']}"
+            (r for r in created_requests if str(r["id"]) == str(request.get("id"))), None)
+        assert original_request is not None, f"No se encontró la solicitud original para {request.get('id')}"
 
         # Verificar que la distancia es correcta
         distance = request.get("distance", 0)
@@ -1298,7 +1298,7 @@ def test_nearby_requests_distance_filter():
         f"Coordenadas de la solicitud lejana: {far_request['location']['pickup_lat']}, {far_request['location']['pickup_lng']}")
     print(
         f"Diferencia de latitud con conductor: {abs(far_request['location']['pickup_lat'] - driver_lat)} grados")
-    assert not any(str(req["id"]) == str(far_request["id"]) for req in nearby_data), \
+    assert not any(str(req.get("id")) == str(far_request["id"]) for req in nearby_data if isinstance(req, dict)), \
         f"La solicitud lejana {far_request['id']} apareció en nearby"
     print("Solicitud lejana correctamente filtrada")
 
@@ -1308,12 +1308,12 @@ def test_nearby_requests_distance_filter():
         (r for r in created_requests if r["location"]["pickup_lat"] == driver_lat), None)
     assert same_point_request is not None, "No se encontró la solicitud en el mismo punto"
     same_point_nearby = next(
-        (req for req in nearby_data if str(req["id"]) == str(same_point_request["id"])), None)
+        (req for req in nearby_data if isinstance(req, dict) and str(req.get("id")) == str(same_point_request["id"])), None)
     assert same_point_nearby is not None, "No se encontró la solicitud en nearby"
-    assert same_point_nearby["distance"] < 100, \
-        f"La distancia debería ser menor a 100m, es {same_point_nearby['distance']}"
+    assert same_point_nearby.get("distance") < 100, \
+        f"La distancia debería ser menor a 100m, es {same_point_nearby.get('distance')}"
     print(
-        f"Distancia de solicitud en mismo punto: {same_point_nearby['distance']} metros")
+        f"Distancia de solicitud en mismo punto: {same_point_nearby.get('distance')} metros")
 
     print("\n=== TEST DE FILTRADO POR DISTANCIA COMPLETADO EXITOSAMENTE ===")
 
@@ -1476,8 +1476,8 @@ def test_nearby_requests_service_type_filter():
     print("\n4. Verificando filtrado por tipo de servicio")
 
     # Filtrar solo las solicitudes que creamos en este test
-    test_requests = [req for req in nearby_data if any(
-        str(req["id"]) == str(created["id"]) for created in created_requests)]
+    test_requests = [req for req in nearby_data if isinstance(req, dict) and any(
+        str(req.get("id")) == str(created["id"]) for created in created_requests)]
     print(f"\nSolicitudes de test encontradas: {len(test_requests)}")
 
     # Verificar que solo aparecen solicitudes de tipo Car (id: 1)
@@ -1498,15 +1498,15 @@ def test_nearby_requests_service_type_filter():
 
     # 5. Verificar que las solicitudes que aparecen están dentro del radio y son del tipo correcto
     for request in test_requests:
-        print(f"\nVerificando solicitud {request['id']}")
+        print(f"\nVerificando solicitud {request.get('id')}")
         # Encontrar la solicitud original para comparar
         original_request = next(
-            (r for r in created_requests if str(r["id"]) == str(request["id"])), None)
-        assert original_request is not None, f"No se encontró la solicitud original para {request['id']}"
+            (r for r in created_requests if str(r["id"]) == str(request.get("id"))), None)
+        assert original_request is not None, f"No se encontró la solicitud original para {request.get('id')}"
 
         # Verificar que es del tipo correcto
         assert request.get('type_service', {}).get('id') == 1, \
-            f"La solicitud {request['id']} es de tipo {request.get('type_service', {}).get('id')}, debería ser tipo 1 (Car)"
+            f"La solicitud {request.get('id')} es de tipo {request.get('type_service', {}).get('id')}, debería ser tipo 1 (Car)"
 
         # Verificar que la distancia es correcta
         distance = request.get("distance", 0)
@@ -1587,7 +1587,7 @@ def test_client_request_ratings():
     print("\n4. Asignando conductor a la solicitud")
     assign_data = {
         "id_client_request": client_request_id,
-        "id_driver": driver_id,
+        "id_driver": str(driver_id),  # Convertir UUID a string
         "fare_assigned": 25000
     }
     assign_resp = client.patch(
@@ -1842,7 +1842,7 @@ def test_driver_trip_offer_flow():
     print("\n6. Cliente aceptando la oferta")
     assign_data = {
         "id_client_request": client_request_id,
-        "id_driver": driver_id,
+        "id_driver": str(driver_id),  # Convertir UUID a string
         "fare_assigned": 25000  # Usar el precio de la oferta
     }
     assign_resp = client.patch(
@@ -1960,7 +1960,7 @@ def test_multiple_driver_offers():
     selected_driver = drivers[1]
     assign_data = {
         "id_client_request": client_request_id,
-        "id_driver": selected_driver["id"],
+        "id_driver": str(selected_driver["id"]),  # Convertir UUID a string
         "fare_assigned": selected_offer["fare_offer"]
     }
     assign_resp = client.patch(
@@ -2297,7 +2297,7 @@ def test_nearby_requests_with_addresses():
     # 4. Verificar que la solicitud aparece y tiene los nuevos campos
     print("\n4. Verificando campos de direcciones")
     test_request = next(
-        (req for req in nearby_data if str(req["id"]) == str(request_id)), None)
+        (req for req in nearby_data if isinstance(req, dict) and str(req.get("id")) == str(request_id)), None)
     assert test_request is not None, f"No se encontró la solicitud {request_id} en nearby"
 
     # Verificar que existen los nuevos campos
