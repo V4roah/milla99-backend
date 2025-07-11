@@ -82,7 +82,7 @@ def test_trip_with_multiple_stops():
         # 4. Asignar conductor
         assign_data = {
             "id_client_request": client_request_id,
-            "id_driver": driver_id,
+            "id_driver": str(driver_id),  # Convertir UUID a string para JSON
             "fare_assigned": 35000
         }
         assign_resp = client.patch(

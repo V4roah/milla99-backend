@@ -61,8 +61,8 @@ def test_get_me():
     assert me_data["full_name"] == "User Me"
     # Verificar que el nuevo campo is_driver_approved esté presente
     assert "is_driver_approved" in me_data
-    # Para un usuario recién creado con solo rol CLIENT, debe ser None
-    assert me_data["is_driver_approved"] is None
+    # Para un usuario recién creado con solo rol CLIENT, debe ser False
+    assert me_data["is_driver_approved"] is False
 
 
 def test_get_me_driver_approved():
