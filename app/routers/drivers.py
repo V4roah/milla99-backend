@@ -727,7 +727,7 @@ async def make_pending_request_offer(
 
         offer = offer_service.create_offer(offer_data)
 
-        return {"message": "Oferta creada exitosamente", "offer_id": str(offer.id), "fare_offer": fare_offer}
+        return {"message": "Oferta creada exitosamente", "offer_id": str(offer.id), "fare_offer": fare_offer, "client_request_id": str(client_request.id)}
 
     except HTTPException:
         raise

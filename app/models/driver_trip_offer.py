@@ -35,6 +35,7 @@ class DriverTripOffer(SQLModel, table=True):
 
 class DriverTripOfferResponse(BaseModel):
     id: UUID
+    client_request_id: UUID
     fare_offer: float
     time: float
     distance: float

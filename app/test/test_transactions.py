@@ -75,7 +75,7 @@ def test_cash_payment_transaction_flow():
     # Asignar conductor
     assign_data = {
         "id_client_request": client_request_id,
-        "id_driver": driver_id,
+        "id_driver": str(driver_id),  # Convertir UUID a string para JSON
         "fare_assigned": fare_assigned
     }
     assign_resp = client.patch(
@@ -259,8 +259,9 @@ def test_pending_request_transaction_flow():
         "fare_offered": 20000,  # Precio base
         "pickup_description": "Cerca del destino del viaje actual",
         "destination_description": "Destino cercano",
-        "pickup_lat": 4.702468,
-        "pickup_lng": -74.109776,
+        # Más cerca del destino del viaje actual (4.700000, -74.100000)
+        "pickup_lat": 4.700500,
+        "pickup_lng": -74.100500,
         "destination_lat": 4.708468,
         "destination_lng": -74.105776,
         "type_service_id": 1,

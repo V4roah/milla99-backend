@@ -118,8 +118,9 @@ def test_price_negotiation_success():
         "fare_offered": 20000,  # Precio base ofrecido por el cliente
         "pickup_description": "Cerca del destino del viaje actual",
         "destination_description": "Destino cercano",
-        "pickup_lat": 4.702468,  # Cerca del destino del viaje actual
-        "pickup_lng": -74.109776,
+        # Más cerca del destino del viaje actual (4.700000, -74.100000)
+        "pickup_lat": 4.700500,
+        "pickup_lng": -74.100500,
         "destination_lat": 4.708468,
         "destination_lng": -74.105776,
         "type_service_id": 1,
@@ -294,8 +295,9 @@ def test_price_negotiation_invalid_price():
         "fare_offered": 20000,  # Precio base
         "pickup_description": "Cerca del destino del viaje actual",
         "destination_description": "Destino cercano",
-        "pickup_lat": 4.702468,
-        "pickup_lng": -74.109776,
+        # Más cerca del destino del viaje actual (4.700000, -74.100000)
+        "pickup_lat": 4.700500,
+        "pickup_lng": -74.100500,
         "destination_lat": 4.708468,
         "destination_lng": -74.105776,
         "type_service_id": 1,
@@ -464,8 +466,9 @@ def test_complete_pending_request_with_negotiated_price():
         "fare_offered": 20000,  # Precio base
         "pickup_description": "Cerca del destino del viaje actual",
         "destination_description": "Destino cercano",
-        "pickup_lat": 4.702468,
-        "pickup_lng": -74.109776,
+        # Más cerca del destino del viaje actual (4.700000, -74.100000)
+        "pickup_lat": 4.700500,
+        "pickup_lng": -74.100500,
         "destination_lat": 4.708468,
         "destination_lng": -74.105776,
         "type_service_id": 1,
@@ -595,10 +598,10 @@ def test_complete_pending_request_without_negotiated_price():
         "fare_offered": 15000,
         "pickup_description": "Chapinero",
         "destination_description": "Usaquén",
-        "pickup_lat": 4.650000,
-        "pickup_lng": -74.050000,
-        "destination_lat": 4.700000,
-        "destination_lng": -74.100000,
+        "pickup_lat": 4.700500,
+        "pickup_lng": -74.100500,
+        "destination_lat": 4.708468,
+        "destination_lng": -74.105776,
         "type_service_id": 1,
         "payment_method_id": 1
     }
@@ -674,8 +677,9 @@ def test_complete_pending_request_without_negotiated_price():
         "fare_offered": 20000,  # Precio base
         "pickup_description": "Cerca del destino del viaje actual",
         "destination_description": "Destino cercano",
-        "pickup_lat": 4.702468,
-        "pickup_lng": -74.109776,
+        # Más cerca del destino del viaje actual (4.708468, -74.105776)
+        "pickup_lat": 4.708500,
+        "pickup_lng": -74.105500,
         "destination_lat": 4.708468,
         "destination_lng": -74.105776,
         "type_service_id": 1,
