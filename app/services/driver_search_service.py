@@ -137,7 +137,7 @@ class DriverSearchService:
         vehicle_type_id: Optional[int] = None
     ) -> List[Dict]:
         """
-        Busca conductores ocupados (ON_THE_WAY, ARRIVED, TRAVELLING) que están cerca del cliente y cumplen TODAS las validaciones.
+        Busca conductores ocupados (ARRIVED, TRAVELLING) que están cerca del cliente y cumplen TODAS las validaciones.
         Solo considera conductores que NO tienen solicitudes pendientes.
 
         Args:
@@ -168,11 +168,10 @@ class DriverSearchService:
             print(
                 f"   - Tiempo máximo de tránsito: {max_transit_time} minutos")
 
-            # Buscar conductores que estén ocupados (ON_THE_WAY, ARRIVED, TRAVELLING) pero NO tengan solicitudes pendientes
+            # Buscar conductores que estén ocupados (ARRIVED, TRAVELLING) pero NO tengan solicitudes pendientes
             query = select(DriverInfo).join(ClientRequest).where(
                 ClientRequest.id_driver_assigned == DriverInfo.user_id,
                 ClientRequest.status.in_([
-                    StatusEnum.ON_THE_WAY,
                     StatusEnum.ARRIVED,
                     StatusEnum.TRAVELLING
                 ]),
@@ -189,7 +188,7 @@ class DriverSearchService:
 
             busy_drivers = self.session.exec(query).all()
             print(
-                f"🔍 Encontrados {len(busy_drivers)} conductores ocupados (ON_THE_WAY/ARRIVED/TRAVELLING) SIN solicitudes pendientes")
+                f"🔍 Encontrados {len(busy_drivers)} conductores ocupados (ARRIVED/TRAVELLING) SIN solicitudes pendientes")
 
             valid_busy_drivers = []
             for driver in busy_drivers:

@@ -1272,11 +1272,12 @@ def test_nearby_requests_distance_filter():
 
     # Verificar que las solicitudes que aparecen están dentro del radio
     for request in test_requests:
-        print(f"\nVerificando solicitud {request.get('id')}")
+        request_id = request.get('id')
+        print(f"\nVerificando solicitud {request_id}")
         # Encontrar la solicitud original para comparar ubicaciones
         original_request = next(
-            (r for r in created_requests if str(r["id"]) == str(request.get("id"))), None)
-        assert original_request is not None, f"No se encontró la solicitud original para {request.get('id')}"
+            (r for r in created_requests if str(r["id"]) == str(request_id)), None)
+        assert original_request is not None, f"No se encontró la solicitud original para {request_id}"
 
         # Verificar que la distancia es correcta
         distance = request.get("distance", 0)

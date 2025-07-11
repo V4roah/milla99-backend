@@ -129,8 +129,7 @@ async def get_nearby_client_requests_service(driver_lat, driver_lng, session: Se
         .join(User, User.id == ClientRequest.id_client)
         .join(TypeService, TypeService.id == ClientRequest.type_service_id)
         .filter(
-            # ✅ ACTUALIZAR: Incluir solicitudes PENDING
-            ClientRequest.status.in_([StatusEnum.CREATED, StatusEnum.PENDING]),
+            ClientRequest.status.in_(["CREATED", "PENDING"]),
             ClientRequest.created_at > time_limit
         )
     )
@@ -969,7 +968,7 @@ class ClientRequestStateMachine:
     Máquina de estados para controlar las transiciones válidas en una solicitud de viaje.
     """
     # Estados que permiten cancelación
-    CANCELLABLE_STATES = {StatusEnum.CREATED, StatusEnum.PENDING,  # ✅ ACTUALIZAR: PENDING permite cancelación
+    CANCELLABLE_STATES = {StatusEnum.CREATED, StatusEnum.PENDING,
                           StatusEnum.ACCEPTED, StatusEnum.ON_THE_WAY,
                           StatusEnum.ARRIVED}
 
@@ -1944,7 +1943,8 @@ def find_busy_drivers(
             DriverInfo.pending_request_id.is_(None),  # Sin solicitud pendiente
             VehicleInfo.vehicle_type_id == type_service_id,
             ClientRequest.status.in_(
-                ["ON_THE_WAY", "ARRIVED", "TRAVELLING"])  # En viaje activo
+                # En viaje activo y puede aceptar solicitudes PENDING
+                ["ARRIVED", "TRAVELLING"])
         )
     )
 
@@ -2419,7 +2419,7 @@ def assign_busy_driver_with_validation(session: Session, client_request_id: UUID
         active_request = session.query(ClientRequest).filter(
             ClientRequest.id_driver_assigned == driver_id,
             ClientRequest.status.in_([
-                "ON_THE_WAY", "ARRIVED", "TRAVELLING"
+                "ARRIVED", "TRAVELLING"
             ])
         ).first()
 

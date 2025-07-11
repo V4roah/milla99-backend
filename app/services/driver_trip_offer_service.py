@@ -132,9 +132,9 @@ class DriverTripOfferService:
 
             # Usar los valores calculados o los valores guardados en la oferta como fallback
             time_to_return = time_to_pickup_minutes if time_to_pickup_minutes > 0 else data.get(
-                "time", 0)
+                "time", 15)  # Default a 15 minutos si falla
             distance_to_return = distance_to_pickup if distance_to_pickup is not None else data.get(
-                "distance", 0)
+                "distance", 5.0)  # Default a 5km si falla
 
             print(
                 f"DEBUG: Conductor {data['id_driver']} - Distancia calculada: {distance_to_return}m, Tiempo: {time_to_return}min")
@@ -245,8 +245,10 @@ class DriverTripOfferService:
                     time_to_pickup / 60) if time_to_pickup is not None else 0
 
                 # Usar los valores calculados o los valores guardados en la oferta como fallback
-                time_to_return = time_to_pickup_minutes if time_to_pickup_minutes > 0 else offer.time
-                distance_to_return = distance_to_pickup if distance_to_pickup is not None else offer.distance
+                time_to_return = time_to_pickup_minutes if time_to_pickup_minutes > 0 else (
+                    offer.time or 15)
+                distance_to_return = distance_to_pickup if distance_to_pickup is not None else (
+                    offer.distance or 5.0)
 
                 print(
                     f"DEBUG: Conductor {offer.id_driver} - Distancia calculada: {distance_to_return}m, Tiempo: {time_to_return}min")
