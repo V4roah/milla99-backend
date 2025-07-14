@@ -1380,6 +1380,14 @@ def driver_canceled_service(session: Session, id_client_request: UUID, user_id: 
         )
 
     # Validación explícita del conductor asignado
+    print(f"🔍 DEBUG SERVICE: client_request.id_driver_assigned: {client_request.id_driver_assigned}")
+    print(f"🔍 DEBUG SERVICE: user_id: {user_id}")
+    print(f"🔍 DEBUG SERVICE: client_request.id_driver_assigned type: {type(client_request.id_driver_assigned)}")
+    print(f"🔍 DEBUG SERVICE: user_id type: {type(user_id)}")
+    print(f"🔍 DEBUG SERVICE: Comparación directa: {client_request.id_driver_assigned == user_id}")
+    print(f"🔍 DEBUG SERVICE: Comparación con str: {client_request.id_driver_assigned == str(user_id)}")
+    print(f"🔍 DEBUG SERVICE: Comparación con UUID: {client_request.id_driver_assigned == UUID(str(user_id))}")
+    
     if client_request.id_driver_assigned != user_id:
         raise HTTPException(
             status_code=403,
@@ -1483,6 +1491,12 @@ def driver_canceled_service(session: Session, id_client_request: UUID, user_id: 
             "success": True,
             "message": "Solicitud de viaje cancelada exitosamente por el conductor."
         }
+
+    # Después de registrar la cancelación y antes de retornar, actualizar el estado a CANCELLED para todos los casos permitidos
+    if client_request.status in [StatusEnum.ACCEPTED, StatusEnum.ON_THE_WAY, StatusEnum.ARRIVED]:
+        client_request.status = StatusEnum.CANCELLED
+        client_request.updated_at = datetime.utcnow()
+        session.commit()
 
 
 def record_driver_cancellation(session: Session, driver_id: UUID, client_request_id: UUID):
