@@ -26,13 +26,26 @@ class DriverPositionService:
         driver_role = self.session.exec(
             select(UserHasRole).where(
                 UserHasRole.id_user == user_id,
-                UserHasRole.id_rol == "DRIVER",
-                UserHasRole.status == RoleStatus.APPROVED
+                UserHasRole.id_rol == "DRIVER"
             )
         ).first()
+
+        # ✅ CORREGIDO: Validación completa del conductor
         if not driver_role:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="El usuario no tiene el rol de conductor")
+
+        if driver_role.status != RoleStatus.APPROVED:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                                 detail="El usuario no tiene el rol de conductor aprobado")
+
+        if not driver_role.is_verified:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="El conductor no está completamente verificado. Faltan documentos por aprobar")
+
+        if driver_role.suspension:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="El conductor está suspendido y no puede operar")
 
         # Verifica si ya existe una posición para este driver
         existing = self.session.get(DriverPosition, user_id)

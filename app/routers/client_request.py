@@ -236,9 +236,23 @@ async def get_nearby_client_requests(
             UserHasRole.id_user == user_id,
             UserHasRole.id_rol == "DRIVER"
         ).first()
-        if not user_role or user_role.status != RoleStatus.APPROVED:
+
+        # ✅ CORREGIDO: Validación completa del conductor
+        if not user_role:
+            raise HTTPException(
+                status_code=400, detail="El usuario no tiene el rol de conductor.")
+
+        if user_role.status != RoleStatus.APPROVED:
             raise HTTPException(
                 status_code=400, detail="El usuario no tiene el rol de conductor aprobado.")
+
+        if not user_role.is_verified:
+            raise HTTPException(
+                status_code=400, detail="El conductor no está completamente verificado. Faltan documentos por aprobar.")
+
+        if user_role.suspension:
+            raise HTTPException(
+                status_code=400, detail="El conductor está suspendido y no puede operar.")
         # 2. Obtener el DriverInfo del conductor
         from app.models.driver_info import DriverInfo
         driver_info = session.query(DriverInfo).filter(

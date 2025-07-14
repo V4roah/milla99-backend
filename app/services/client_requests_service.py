@@ -272,18 +272,69 @@ def assign_driver_service(session: Session, id: UUID, id_driver_assigned: UUID, 
         print("DEBUG user_role:", user_role)
         if user_role:
             print("DEBUG user_role.status:", user_role.status)
+            print("DEBUG user_role.is_verified:", user_role.is_verified)
+            print("DEBUG user_role.suspension:", user_role.suspension)
 
-        if not user_role or user_role.status != RoleStatus.APPROVED:
-            print("DEBUG: No tiene rol DRIVER aprobado")
+        # ✅ CORREGIDO: Validación completa del conductor
+        if not user_role:
+            print("DEBUG: No tiene rol DRIVER")
             raise HTTPException(
                 status_code=400,
-                detail="El usuario no tiene el rol de conductor aprobado. No se puede asignar como conductor."
+                detail="El usuario no tiene el rol de conductor"
+            )
+        
+        if user_role.status != RoleStatus.APPROVED:
+            print("DEBUG: No tiene status APPROVED")
+            raise HTTPException(
+                status_code=400,
+                detail="El usuario no tiene el rol de conductor aprobado"
+            )
+        
+        if not user_role.is_verified:
+            print("DEBUG: No está completamente verificado")
+            raise HTTPException(
+                status_code=400,
+                detail="El conductor no está completamente verificado. Faltan documentos por aprobar"
+            )
+        
+        if user_role.suspension:
+            print("DEBUG: Está suspendido")
+            raise HTTPException(
+                status_code=400,
+                detail="El conductor está suspendido y no puede operar"
             )
         client_request = session.query(ClientRequest).filter(
             ClientRequest.id == id).first()
         if not client_request:
             raise HTTPException(
                 status_code=404, detail="Solicitud no encontrada")
+        # ✅ AGREGADO: Validación de saldo para asignación directa
+        # Obtener saldo del conductor
+        driver_balance = session.query(VerifyMount).filter(
+            VerifyMount.user_id == id_driver_assigned
+        ).first()
+
+        driver_current_balance = driver_balance.mount if driver_balance else 0
+        print(f"💰 Saldo actual del conductor: ${driver_current_balance:,}")
+
+        # Calcular comisión estimada (10% del valor del viaje)
+        commission_percentage = 0.10
+        estimated_commission = float(
+            fare_assigned or client_request.fare_offered or 0) * commission_percentage
+        print(f"💸 Comisión estimada (10%): ${estimated_commission:,.0f}")
+
+        # Validar que el conductor tenga saldo suficiente
+        if driver_current_balance < estimated_commission:
+            print(
+                f"❌ Saldo insuficiente: ${driver_current_balance:,} < ${estimated_commission:,.0f}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"No se puede asignar el conductor porque su saldo (${driver_current_balance:,}) es insuficiente para cubrir la comisión estimada (${estimated_commission:,.0f}) del viaje."
+            )
+
+        print(
+            f"✅ Saldo suficiente para comisión: ${driver_current_balance:,} >= ${estimated_commission:,.0f}")
+
         client_request.id_driver_assigned = id_driver_assigned
         client_request.status = "ACCEPTED"
         client_request.updated_at = datetime.utcnow()
@@ -886,8 +937,10 @@ def get_nearby_drivers_service(
             .filter(
                 UserHasRole.id_rol == "DRIVER",
                 UserHasRole.status == RoleStatus.APPROVED,
-                User.is_active == True,
-                DriverPosition.position.isnot(None),
+                UserHasRole.is_verified == True,
+                UserHasRole.suspension == False,  # ✅ AGREGADO: Filtrar conductores suspendidos
+                DriverInfo.pending_request_id.is_(
+                    None),  # Sin solicitud pendiente
                 VehicleInfo.vehicle_type_id == type_service.vehicle_type_id
             )
         )
@@ -1380,14 +1433,19 @@ def driver_canceled_service(session: Session, id_client_request: UUID, user_id: 
         )
 
     # Validación explícita del conductor asignado
-    print(f"🔍 DEBUG SERVICE: client_request.id_driver_assigned: {client_request.id_driver_assigned}")
+    print(
+        f"🔍 DEBUG SERVICE: client_request.id_driver_assigned: {client_request.id_driver_assigned}")
     print(f"🔍 DEBUG SERVICE: user_id: {user_id}")
-    print(f"🔍 DEBUG SERVICE: client_request.id_driver_assigned type: {type(client_request.id_driver_assigned)}")
+    print(
+        f"🔍 DEBUG SERVICE: client_request.id_driver_assigned type: {type(client_request.id_driver_assigned)}")
     print(f"🔍 DEBUG SERVICE: user_id type: {type(user_id)}")
-    print(f"🔍 DEBUG SERVICE: Comparación directa: {client_request.id_driver_assigned == user_id}")
-    print(f"🔍 DEBUG SERVICE: Comparación con str: {client_request.id_driver_assigned == str(user_id)}")
-    print(f"🔍 DEBUG SERVICE: Comparación con UUID: {client_request.id_driver_assigned == UUID(str(user_id))}")
-    
+    print(
+        f"🔍 DEBUG SERVICE: Comparación directa: {client_request.id_driver_assigned == user_id}")
+    print(
+        f"🔍 DEBUG SERVICE: Comparación con str: {client_request.id_driver_assigned == str(user_id)}")
+    print(
+        f"🔍 DEBUG SERVICE: Comparación con UUID: {client_request.id_driver_assigned == UUID(str(user_id))}")
+
     if client_request.id_driver_assigned != user_id:
         raise HTTPException(
             status_code=403,
@@ -1968,6 +2026,7 @@ def find_busy_drivers(
             UserHasRole.id_rol == "DRIVER",
             UserHasRole.status == RoleStatus.APPROVED,
             UserHasRole.is_verified == True,
+            UserHasRole.suspension == False,  # ✅ AGREGADO: Filtrar conductores suspendidos
             DriverInfo.pending_request_id.is_(None),  # Sin solicitud pendiente
             VehicleInfo.vehicle_type_id == type_service_id,
             ClientRequest.status.in_(

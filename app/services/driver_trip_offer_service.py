@@ -19,6 +19,7 @@ from app.core.config import settings
 from app.utils.geo_utils import wkb_to_coords, get_time_and_distance_from_google
 from app.services.notification_service import NotificationService
 import logging
+from app.models.user_has_roles import RoleStatus
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,24 @@ class DriverTripOfferService:
             print(f"ERROR: Usuario {data['id_driver']} no tiene rol DRIVER")
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                                 detail="El usuario no tiene el rol de conductor")
+
+        # ✅ AGREGADO: Validación completa del conductor
+        if driver_role.status != RoleStatus.APPROVED:
+            print(
+                f"ERROR: Usuario {data['id_driver']} no tiene status APPROVED")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="El usuario no tiene el rol de conductor aprobado")
+
+        if not driver_role.is_verified:
+            print(
+                f"ERROR: Usuario {data['id_driver']} no está completamente verificado")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="El conductor no está completamente verificado. Faltan documentos por aprobar")
+
+        if driver_role.suspension:
+            print(f"ERROR: Usuario {data['id_driver']} está suspendido")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="El conductor está suspendido y no puede operar")
 
         # Validar que la solicitud exista y esté en estado CREATED
         client_request = self.session.get(
