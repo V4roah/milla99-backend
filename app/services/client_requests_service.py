@@ -96,7 +96,7 @@ def get_time_and_distance_service(origin_lat, origin_lng, destination_lat, desti
     return data
 
 
-async def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session, wkb_to_coords, type_service_ids=None):
+async def get_nearby_client_requests_service(driver_lat, driver_lng, session: Session, wkb_to_coords, type_service_ids=None, current_driver_id=None):
     print(
         f"\n[DEBUG] Calculando distancias para conductor en lat={driver_lat}, lng={driver_lng}")
     driver_point = func.ST_GeomFromText(
@@ -110,6 +110,16 @@ async def get_nearby_client_requests_service(driver_lat, driver_lng, session: Se
     distance_limit = 4000
     print(
         f"[DEBUG] Límite de distancia configurado: {distance_limit} metros (1.35km)")
+
+    # --- INICIO DEL NUEVO FILTRO ---
+    from app.models.driver_trip_offer import DriverTripOffer
+    if current_driver_id is not None:
+        subquery = session.query(DriverTripOffer.id_client_request).filter(
+            DriverTripOffer.id_driver == current_driver_id
+        )
+    else:
+        subquery = []
+    # --- FIN DEL NUEVO FILTRO ---
 
     base_query = (
         session.query(
@@ -136,6 +146,10 @@ async def get_nearby_client_requests_service(driver_lat, driver_lng, session: Se
     if type_service_ids:
         base_query = base_query.filter(
             ClientRequest.type_service_id.in_(type_service_ids))
+    # --- APLICAR FILTRO DE OFERTAS ---
+    if current_driver_id is not None:
+        base_query = base_query.filter(~ClientRequest.id.in_(subquery))
+    # --- FIN FILTRO DE OFERTAS ---
 
     print(f"[DEBUG] Query SQL: {str(base_query)}")
 
@@ -2558,15 +2572,19 @@ def evaluate_and_update_trip_state(session, client_request_id, driver_position):
     elif current_status == StatusEnum.ON_THE_WAY:
         # Calcular distancia al punto de recogida
         pickup_coords = None
-        print(f"🔍 DEBUG evaluate_and_update_trip_state: Estado actual: {current_status}")
-        print(f"🔍 DEBUG evaluate_and_update_trip_state: pickup_position existe: {hasattr(client_request, 'pickup_position')}")
-        print(f"🔍 DEBUG evaluate_and_update_trip_state: pickup_position es None: {client_request.pickup_position is None}")
-        
+        print(
+            f"🔍 DEBUG evaluate_and_update_trip_state: Estado actual: {current_status}")
+        print(
+            f"🔍 DEBUG evaluate_and_update_trip_state: pickup_position existe: {hasattr(client_request, 'pickup_position')}")
+        print(
+            f"🔍 DEBUG evaluate_and_update_trip_state: pickup_position es None: {client_request.pickup_position is None}")
+
         if hasattr(client_request, 'pickup_position') and client_request.pickup_position is not None:
             from app.utils.geo_utils import wkb_to_coords
             pickup_coords = wkb_to_coords(client_request.pickup_position)
-            print(f"🔍 DEBUG evaluate_and_update_trip_state: pickup_coords extraídas: {pickup_coords}")
-        
+            print(
+                f"🔍 DEBUG evaluate_and_update_trip_state: pickup_coords extraídas: {pickup_coords}")
+
         if pickup_coords:
             distance = get_distance_meters(
                 pickup_coords['lat'],
@@ -2574,20 +2592,26 @@ def evaluate_and_update_trip_state(session, client_request_id, driver_position):
                 driver_position['lat'],
                 driver_position['lng']
             )
-            print(f"🔍 DEBUG evaluate_and_update_trip_state: Distancia calculada: {distance} metros")
-            print(f"🔍 DEBUG evaluate_and_update_trip_state: Driver position: {driver_position}")
-            print(f"🔍 DEBUG evaluate_and_update_trip_state: Pickup coords: {pickup_coords}")
-            
+            print(
+                f"🔍 DEBUG evaluate_and_update_trip_state: Distancia calculada: {distance} metros")
+            print(
+                f"🔍 DEBUG evaluate_and_update_trip_state: Driver position: {driver_position}")
+            print(
+                f"🔍 DEBUG evaluate_and_update_trip_state: Pickup coords: {pickup_coords}")
+
             if distance < 50:
-                print(f"🔍 DEBUG evaluate_and_update_trip_state: ¡Distancia < 50m! Cambiando a ARRIVED")
+                print(
+                    f"🔍 DEBUG evaluate_and_update_trip_state: ¡Distancia < 50m! Cambiando a ARRIVED")
                 client_request.status = StatusEnum.ARRIVED
                 client_request.arrived_position_lat = driver_position['lat']
                 client_request.arrived_position_lng = driver_position['lng']
                 updated = True
             else:
-                print(f"🔍 DEBUG evaluate_and_update_trip_state: Distancia {distance}m >= 50m, manteniendo ON_THE_WAY")
+                print(
+                    f"🔍 DEBUG evaluate_and_update_trip_state: Distancia {distance}m >= 50m, manteniendo ON_THE_WAY")
         else:
-            print(f"🔍 DEBUG evaluate_and_update_trip_state: No se pudieron obtener pickup_coords")
+            print(
+                f"🔍 DEBUG evaluate_and_update_trip_state: No se pudieron obtener pickup_coords")
 
     # Transición ARRIVED → TRAVELLING
     elif current_status == StatusEnum.ARRIVED:

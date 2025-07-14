@@ -2949,3 +2949,86 @@ def test_automatic_transition_travelling_to_finished():
         traceback.print_exc()
         print("=== FIN TRACEBACK ===")
         raise
+
+
+def test_nearby_excludes_requests_with_driver_offer(client):
+    """
+    Verifica que una solicitud ya no aparece en /client-request/nearby después de que el conductor envía una oferta a esa solicitud.
+    """
+    # 1. Crear y autenticar conductor
+    driver_phone = "3019999999"
+    driver_country_code = "+57"
+    driver_token, driver_id = create_and_approve_driver(
+        client, driver_phone, driver_country_code)
+    driver_headers = {"Authorization": f"Bearer {driver_token}"}
+
+    # 2. Crear y autenticar cliente
+    client_phone = "3029999999"
+    client_country_code = "+57"
+    client_data = {
+        "full_name": "Test Cliente Nearby",
+        "country_code": client_country_code,
+        "phone_number": client_phone
+    }
+    create_resp = client.post("/users/", json=client_data)
+    assert create_resp.status_code == 201
+    send_resp = client.post(
+        f"/auth/verify/{client_country_code}/{client_phone}/send")
+    assert send_resp.status_code == 201
+    code = send_resp.json()["message"].split()[-1]
+    verify_resp = client.post(
+        f"/auth/verify/{client_country_code}/{client_phone}/code",
+        json={"code": code})
+    assert verify_resp.status_code == 200
+    client_token = verify_resp.json()["access_token"]
+    client_headers = {"Authorization": f"Bearer {client_token}"}
+
+    # 3. Cliente crea una solicitud
+    request_data = {
+        "fare_offered": 15000,
+        "pickup_description": "Test Pickup",
+        "destination_description": "Test Destination",
+        "pickup_lat": 4.718136,
+        "pickup_lng": -74.073170,
+        "destination_lat": 4.702468,
+        "destination_lng": -74.109776,
+        "type_service_id": 1,
+        "payment_method_id": 1
+    }
+    create_req_resp = client.post(
+        "/client-request/", json=request_data, headers=client_headers)
+    assert create_req_resp.status_code == 201
+    client_request_id = create_req_resp.json()["id"]
+
+    # 4. El conductor consulta nearby y ve la solicitud
+    nearby_resp = client.get(
+        f"/client-request/nearby?driver_lat=4.718136&driver_lng=-74.073170",
+        headers=driver_headers
+    )
+    assert nearby_resp.status_code == 200
+    nearby_data = nearby_resp.json()
+    assert any(
+        req.get("id") == str(client_request_id) for req in nearby_data if isinstance(req, dict)
+    ), "La solicitud debería aparecer en nearby antes de ofertar"
+
+    # 5. El conductor envía una oferta a la solicitud
+    offer_data = {
+        "id_client_request": client_request_id,
+        "fare_offer": 16000,
+        "time": 20.0,
+        "distance": 3.0
+    }
+    offer_resp = client.post(
+        "/driver-trip-offers/", json=offer_data, headers=driver_headers)
+    assert offer_resp.status_code == 201, f"Error al enviar oferta: {offer_resp.text}"
+
+    # 6. El conductor consulta nearby nuevamente y la solicitud ya no aparece
+    nearby_resp2 = client.get(
+        f"/client-request/nearby?driver_lat=4.718136&driver_lng=-74.073170",
+        headers=driver_headers
+    )
+    assert nearby_resp2.status_code == 200
+    nearby_data2 = nearby_resp2.json()
+    assert not any(
+        req.get("id") == str(client_request_id) for req in nearby_data2 if isinstance(req, dict)
+    ), "La solicitud NO debería aparecer en nearby después de ofertar"

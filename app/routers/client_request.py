@@ -263,7 +263,7 @@ async def get_nearby_client_requests(
         type_service_ids = [ts.id for ts in type_services]
         # 4. Buscar las solicitudes cercanas filtrando por esos type_service_ids
         results = await get_nearby_client_requests_service(
-            driver_lat, driver_lng, session, wkb_to_coords, type_service_ids=type_service_ids
+            driver_lat, driver_lng, session, wkb_to_coords, type_service_ids=type_service_ids, current_driver_id=user_id
         )
         if not results:
             return JSONResponse(
