@@ -16,6 +16,7 @@ from clicksend_client.rest import ApiException
 from sqlalchemy.orm import joinedload
 from uuid import UUID
 from .refresh_token_service import RefreshTokenService
+import pytz
 
 
 class AuthService:
@@ -215,6 +216,9 @@ class AuthService:
                 client_role.status = RoleStatus.APPROVED
             if client_role.status == RoleStatus.APPROVED:
                 client_role.is_verified = True
+                if not client_role.verified_at:
+                    COLOMBIA_TZ = pytz.timezone("America/Bogota")
+                    client_role.verified_at = datetime.now(COLOMBIA_TZ)
             self.session.add(client_role)
             self.session.commit()
 
