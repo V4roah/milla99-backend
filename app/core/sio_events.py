@@ -13,7 +13,10 @@ mgr = socketio.AsyncRedisManager('redis://localhost:6379/0')
 #     client_manager=mgr,
 #     cors_allowed_origins='*'
 # )
-sio = socketio.AsyncServer(async_mode='asgi')
+sio = socketio.AsyncServer(
+    async_mode='asgi',
+    cors_allowed_origins='*'
+)
 
 
 @sio.event
