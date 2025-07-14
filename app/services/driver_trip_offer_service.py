@@ -9,6 +9,7 @@ from app.models.vehicle_info import VehicleInfo
 from app.models.driver_trip_offer import DriverTripOfferResponse
 from app.models.driver_response import UserResponse, DriverInfoResponse, VehicleInfoResponse
 from app.models.driver_position import DriverPosition
+from app.models.verify_mount import VerifyMount
 from sqlalchemy.orm import selectinload
 from sqlalchemy import func
 from datetime import datetime
@@ -87,6 +88,35 @@ class DriverTripOfferService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="La oferta debe ser mayor o igual al precio base"
             )
+
+        # ✅ NUEVA VALIDACIÓN: Verificar saldo del conductor para cubrir comisión
+        print(f"🔍 Validando saldo del conductor para comisión...")
+
+        # Obtener saldo del conductor
+        driver_balance = self.session.query(VerifyMount).filter(
+            VerifyMount.user_id == data["id_driver"]
+        ).first()
+
+        driver_current_balance = driver_balance.mount if driver_balance else 0
+        print(f"💰 Saldo actual del conductor: ${driver_current_balance:,}")
+
+        # Calcular comisión estimada (10% del valor del viaje según earnings_service.py)
+        commission_percentage = 0.10  # 10%
+        estimated_commission = float(
+            data["fare_offer"]) * commission_percentage
+        print(f"💸 Comisión estimada (10%): ${estimated_commission:,.0f}")
+
+        # Validar que el conductor tenga saldo suficiente
+        if driver_current_balance < estimated_commission:
+            print(
+                f"❌ Saldo insuficiente: ${driver_current_balance:,} < ${estimated_commission:,.0f}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"No puedes ofertar porque tu saldo (${driver_current_balance:,}) es insuficiente para cubrir la comisión estimada (${estimated_commission:,.0f}) del viaje. Recarga tu billetera para continuar."
+            )
+
+        print(
+            f"✅ Saldo suficiente para comisión: ${driver_current_balance:,} >= ${estimated_commission:,.0f}")
 
         # Validar que no exista una oferta previa del mismo conductor para esta solicitud
         existing_offer = self.session.exec(

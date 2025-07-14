@@ -3032,3 +3032,102 @@ def test_nearby_excludes_requests_with_driver_offer(client):
     assert not any(
         req.get("id") == str(client_request_id) for req in nearby_data2 if isinstance(req, dict)
     ), "La solicitud NO debería aparecer en nearby después de ofertar"
+
+
+def test_driver_cannot_offer_with_insufficient_balance(client):
+    """
+    Verifica que un conductor sin saldo suficiente no puede enviar una oferta.
+    """
+    # 1. Crear y autenticar conductor (sin saldo)
+    driver_phone = "3039999999"
+    driver_country_code = "+57"
+    driver_token, driver_id = create_and_approve_driver(
+        client, driver_phone, driver_country_code)
+    driver_headers = {"Authorization": f"Bearer {driver_token}"}
+
+    # 1.5. Vaciar el saldo del conductor para probar la validación
+    from app.models.verify_mount import VerifyMount
+    from app.core.db import get_session
+
+    # Obtener sesión de base de datos
+    session = next(get_session())
+    try:
+        verify_mount = session.query(VerifyMount).filter(
+            VerifyMount.user_id == driver_id
+        ).first()
+        if verify_mount:
+            verify_mount.mount = 0  # Saldo 0 para probar validación
+            session.commit()
+            print(f"💰 Saldo del conductor vaciado a: ${verify_mount.mount:,}")
+    finally:
+        session.close()
+
+    # 2. Crear y autenticar cliente
+    client_phone = "3049999999"
+    client_country_code = "+57"
+    client_data = {
+        "full_name": "Test Cliente Balance",
+        "country_code": client_country_code,
+        "phone_number": client_phone
+    }
+    create_resp = client.post("/users/", json=client_data)
+    assert create_resp.status_code == 201
+    send_resp = client.post(
+        f"/auth/verify/{client_country_code}/{client_phone}/send")
+    assert send_resp.status_code == 201
+    code = send_resp.json()["message"].split()[-1]
+    verify_resp = client.post(
+        f"/auth/verify/{client_country_code}/{client_phone}/code",
+        json={"code": code})
+    assert verify_resp.status_code == 200
+    client_token = verify_resp.json()["access_token"]
+    client_headers = {"Authorization": f"Bearer {client_token}"}
+
+    # 3. Cliente crea una solicitud
+    request_data = {
+        "fare_offered": 20000,  # Precio base
+        "pickup_description": "Test Pickup",
+        "destination_description": "Test Destination",
+        "pickup_lat": 4.718136,
+        "pickup_lng": -74.073170,
+        "destination_lat": 4.702468,
+        "destination_lng": -74.109776,
+        "type_service_id": 1,
+        "payment_method_id": 1
+    }
+    create_req_resp = client.post(
+        "/client-request/", json=request_data, headers=client_headers)
+    assert create_req_resp.status_code == 201
+    client_request_id = create_req_resp.json()["id"]
+
+    # 4. El conductor intenta enviar una oferta (sin saldo)
+    offer_data = {
+        "id_client_request": client_request_id,
+        "fare_offer": 22000,  # Oferta mayor al precio base
+        "time": 20.0,
+        "distance": 3.0
+    }
+    offer_resp = client.post(
+        "/driver-trip-offers/", json=offer_data, headers=driver_headers)
+
+    # 5. Verificar que la oferta fue rechazada por saldo insuficiente
+    assert offer_resp.status_code == 400, f"Debería fallar por saldo insuficiente: {offer_resp.text}"
+
+    error_detail = offer_resp.json().get("detail", "")
+    assert "saldo" in error_detail.lower(
+    ), f"El mensaje debe mencionar saldo: {error_detail}"
+    assert "comisión" in error_detail.lower(
+    ), f"El mensaje debe mencionar comisión: {error_detail}"
+    assert "recarga" in error_detail.lower(
+    ), f"El mensaje debe sugerir recargar: {error_detail}"
+
+    # 6. Verificar que la solicitud sigue apareciendo en nearby (porque no se creó oferta)
+    nearby_resp = client.get(
+        f"/client-request/nearby?driver_lat=4.718136&driver_lng=-74.073170",
+        headers=driver_headers
+    )
+    assert nearby_resp.status_code == 200
+    nearby_data = nearby_resp.json()
+    assert any(
+        req.get("id") == str(client_request_id) for req in nearby_data if isinstance(req, dict)
+    ), "La solicitud debería seguir apareciendo porque no se creó oferta"
