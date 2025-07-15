@@ -175,19 +175,20 @@ def after_update_listener(mapper, connection, target):
     # Obtener el estado del objeto para verificar cambios
     state = inspect(target)
     attr = state.attrs.status
-    # Verificar si el status cambió y si el nuevo valor es PAID
+    # Verificar si el status cambió y si el nuevo valor es PAID o CANCELLED
     if attr.history.has_changes():
         old_value = attr.history.deleted[0] if attr.history.deleted else None
         new_value = attr.value
-        if new_value == StatusEnum.PAID and old_value != StatusEnum.PAID:
+        if new_value in [StatusEnum.PAID, StatusEnum.CANCELLED] and old_value not in [StatusEnum.PAID, StatusEnum.CANCELLED]:
             session = Session(bind=connection)
             try:
-                # Distribuir ganancias
-                distribute_earnings(session, target)
-                # Limpiar mensajes de chat automáticamente
+                # Solo distribuir ganancias si es PAID
+                if new_value == StatusEnum.PAID:
+                    distribute_earnings(session, target)
+                # Limpiar mensajes de chat automáticamente en ambos estados
                 cleanup_chat_messages_for_request(session, target.id)
                 print(
-                    f"✅ Chat messages eliminados automáticamente para ClientRequest {target.id} (status: PAID)")
+                    f"✅ Chat messages eliminados automáticamente para ClientRequest {target.id} (status: {new_value})")
             except Exception as e:
                 print(f"Error en after_update_listener: {e}")
                 raise

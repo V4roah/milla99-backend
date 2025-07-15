@@ -29,15 +29,15 @@ def create_chat_message(session: Session, sender_id: UUID, message_data: ChatMes
         if not client_request:
             raise ValueError("Solicitud de viaje no encontrada")
 
-        if client_request.status == "PAID":
+        if client_request.status in ["PAID", "CANCELLED"]:
             # Eliminar mensajes automáticamente usando la misma sesión
             cleanup_chat_messages_for_request(fresh_session, client_request.id)
-            raise ValueError(
-                "No se pueden enviar mensajes en un viaje completado")
-
-        if client_request.status == "CANCELLED":
-            raise ValueError(
-                "No se pueden enviar mensajes en un viaje cancelado")
+            if client_request.status == "PAID":
+                raise ValueError(
+                    "No se pueden enviar mensajes en un viaje completado")
+            else:
+                raise ValueError(
+                    "No se pueden enviar mensajes en un viaje cancelado")
 
         # Crear mensaje usando la sesión fresca
         chat_message = ChatMessage(
@@ -65,26 +65,59 @@ def get_conversation_messages(session: Session, client_request_id: UUID, user_id
     """
     Obtiene todos los mensajes de una conversación específica.
     Si el ClientRequest está en estado PAID, retorna lista vacía.
+    Usa el mismo patrón del listener para manejar sesiones consistentes.
     """
-    # Verificar que el usuario tiene acceso a esta conversación
-    client_request = session.get(ClientRequest, client_request_id)
-    if not client_request:
-        raise ValueError("Solicitud de viaje no encontrada")
+    print(f"🔍 DEBUG get_conversation_messages:")
+    print(f"  - client_request_id: {client_request_id}")
+    print(f"  - user_id: {user_id}")
 
-    if client_request.id_client != user_id and client_request.id_driver_assigned != user_id:
-        raise ValueError("No tienes acceso a esta conversación")
+    # Obtener la conexión actual para crear una sesión fresca
+    connection = session.bind
 
-    # Si el viaje está completado, no hay mensajes
-    if client_request.status == "PAID":
-        return []
+    # Crear sesión fresca vinculada a la misma conexión (mismo patrón del listener)
+    fresh_session = Session(bind=connection)
 
-    # Obtener mensajes ordenados por fecha de creación
-    statement = select(ChatMessage).where(
-        ChatMessage.client_request_id == client_request_id
-    ).order_by(ChatMessage.created_at.asc())
+    try:
+        # Verificar que el usuario tiene acceso a esta conversación
+        client_request = fresh_session.get(ClientRequest, client_request_id)
+        if not client_request:
+            print(f"  ❌ ClientRequest no encontrado")
+            raise ValueError("Solicitud de viaje no encontrada")
 
-    messages = session.exec(statement).all()
-    return messages
+        print(f"  - ClientRequest encontrado: {client_request.id}")
+        print(f"  - Estado: {client_request.status}")
+        print(f"  - id_client: {client_request.id_client}")
+        print(f"  - id_driver_assigned: {client_request.id_driver_assigned}")
+
+        if client_request.id_client != user_id and client_request.id_driver_assigned != user_id:
+            print(f"  ❌ Usuario no tiene acceso")
+            raise ValueError("No tienes acceso a esta conversación")
+
+        # Si el viaje está completado (PAID) o cancelado (CANCELLED), no hay mensajes (se eliminaron automáticamente)
+        if client_request.status in ["PAID", "CANCELLED"]:
+            print(
+                f"  ✅ Estado {client_request.status} - retornando lista vacía")
+            return []
+
+        # Obtener mensajes ordenados por fecha de creación
+        statement = select(ChatMessage).where(
+            ChatMessage.client_request_id == client_request_id
+        ).order_by(ChatMessage.created_at.asc())
+
+        messages = fresh_session.exec(statement).all()
+        print(f"  - Mensajes encontrados: {len(messages)}")
+
+        for i, msg in enumerate(messages):
+            print(
+                f"    Mensaje {i+1}: {msg.message} (sender: {msg.sender_id})")
+
+        return messages
+
+    except Exception as e:
+        fresh_session.rollback()
+        raise
+    finally:
+        fresh_session.close()
 
 
 def mark_messages_as_read(session: Session, client_request_id: UUID, user_id: UUID) -> int:

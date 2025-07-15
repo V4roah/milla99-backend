@@ -840,3 +840,115 @@ class TestChatSystem:
         conversation_messages = response.json()
         assert len(conversation_messages) == 0
         print(f"✅ Conversación retorna lista vacía en estado PAID")
+
+    def test_chat_persistence_through_all_states(self, client: TestClient):
+        """
+        Test que verifica que el chat es persistente durante todas las transiciones de estado.
+        Verifica que los mensajes se mantienen durante el viaje y se eliminan en PAID y CANCELLED.
+        """
+        print(f"\n🧪 INICIANDO TEST: test_chat_persistence_through_all_states")
+
+        # 1. Crear usuarios y ClientRequest
+        client_user, driver_user = self._create_test_users()
+        client_request = self._create_test_client_request(
+            client_user.id, driver_user.id)
+        client_request_id = client_request.id
+        print(f"✅ ClientRequest creado: {client_request_id}")
+
+        # 2. Autenticar como cliente y conductor
+        client_token = self._authenticate_user(
+            client, client_user.phone_number)
+        driver_token = self._authenticate_user(
+            client, driver_user.phone_number)
+        client_headers = {"Authorization": f"Bearer {client_token}"}
+        driver_headers = {"Authorization": f"Bearer {driver_token}"}
+
+        # 3. Estados que permiten chat (todos excepto PAID y CANCELLED)
+        estados_activos = ["CREATED", "PENDING", "ACCEPTED",
+                           "ARRIVED", "ON_THE_WAY", "TRAVELLING", "FINISHED"]
+        estados_finales = ["PAID", "CANCELLED"]
+
+        mensajes_enviados = 0
+
+        # 4. Probar cada estado activo
+        for estado in estados_activos:
+            # Cambiar estado
+            with Session(engine) as session:
+                client_request = session.exec(
+                    select(ClientRequest).where(
+                        ClientRequest.id == client_request_id)
+                ).first()
+                client_request.status = estado
+                session.add(client_request)
+                session.commit()
+                print(f"✅ Estado cambiado a {estado}")
+
+            # Enviar mensaje del cliente
+            message_data = {
+                "receiver_id": str(driver_user.id),
+                "client_request_id": str(client_request_id),
+                "message": f"Cliente: Hola desde {estado}"
+            }
+            response = client.post(
+                "/chat/send", json=message_data, headers=client_headers)
+            assert response.status_code == 201
+            mensajes_enviados += 1
+            print(f"✅ Mensaje del cliente enviado en {estado}")
+
+            # Enviar mensaje del conductor
+            message_data = {
+                "receiver_id": str(client_user.id),
+                "client_request_id": str(client_request_id),
+                "message": f"Conductor: Ok desde {estado}"
+            }
+            response = client.post(
+                "/chat/send", json=message_data, headers=driver_headers)
+            assert response.status_code == 201
+            mensajes_enviados += 1
+            print(f"✅ Mensaje del conductor enviado en {estado}")
+
+            # Verificar que todos los mensajes están ahí
+            response = client.get(
+                f"/chat/conversation/{client_request_id}", headers=client_headers)
+            assert response.status_code == 200
+            conversation_messages = response.json()
+            assert len(conversation_messages) == mensajes_enviados
+            print(
+                f"✅ Conversación tiene {len(conversation_messages)} mensajes en {estado}")
+
+        # 5. Probar estados finales (no deben permitir mensajes)
+        for estado in estados_finales:
+            # Cambiar estado
+            with Session(engine) as session:
+                client_request = session.exec(
+                    select(ClientRequest).where(
+                        ClientRequest.id == client_request_id)
+                ).first()
+                client_request.status = estado
+                session.add(client_request)
+                session.commit()
+                print(f"✅ Estado cambiado a {estado}")
+
+            # Intentar enviar mensaje (debe fallar)
+            message_data = {
+                "receiver_id": str(driver_user.id),
+                "client_request_id": str(client_request_id),
+                "message": f"Intento desde {estado}"
+            }
+            response = client.post(
+                "/chat/send", json=message_data, headers=client_headers)
+            assert response.status_code == 400
+            print(f"✅ Correcto: No se pueden enviar mensajes en {estado}")
+
+            # Verificar conversación
+            response = client.get(
+                f"/chat/conversation/{client_request_id}", headers=client_headers)
+            assert response.status_code == 200
+            conversation_messages = response.json()
+
+            # En ambos estados finales (PAID y CANCELLED), no debe haber mensajes (se eliminaron automáticamente)
+            assert len(conversation_messages) == 0
+            print(
+                f"✅ Conversación vacía en {estado} (mensajes eliminados)")
+
+        print(f"✅ Test completado: Chat funciona correctamente en todas las transiciones")
