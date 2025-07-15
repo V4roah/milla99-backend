@@ -91,6 +91,9 @@ def send_message(
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        # Re-lanzar HTTPException sin modificar (preservar código de estado)
+        raise
     except Exception as e:
         print(f"[ERROR] Exception en send_message: {str(e)}")
         print(traceback.format_exc())
@@ -181,6 +184,9 @@ def get_conversation(
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        # Re-lanzar HTTPException sin modificar (preservar código de estado)
+        raise
     except Exception as e:
         print(f"[ERROR] Exception en get_conversation: {str(e)}")
         print(traceback.format_exc())
@@ -244,6 +250,9 @@ def mark_conversation_as_read(
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        # Re-lanzar HTTPException sin modificar (preservar código de estado)
+        raise
     except Exception as e:
         print(f"[ERROR] Exception en mark_conversation_as_read: {str(e)}")
         print(traceback.format_exc())
@@ -306,6 +315,9 @@ def get_unread_messages_count(
 
         return unread_counts
 
+    except HTTPException:
+        # Re-lanzar HTTPException sin modificar (preservar código de estado)
+        raise
     except Exception as e:
         print(f"[ERROR] Exception en get_unread_messages_count: {str(e)}")
         print(traceback.format_exc())

@@ -145,6 +145,10 @@ class AuthService:
             # await self.generate_mns_verification(full_phone, message)
 
             return verif, verification_code
+        except HTTPException:
+            # Re-lanzar HTTPException sin modificar (preservar código de estado)
+            self.session.rollback()
+            raise
         except Exception as e:
             self.session.rollback()
             raise HTTPException(

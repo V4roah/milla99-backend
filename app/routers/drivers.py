@@ -163,18 +163,11 @@ async def create_driver(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Error al decodificar JSON: {str(e)}"
         )
-    except HTTPException as http_ex:
-        print(
-            f"DEBUG: Capturando HTTPException con status_code: {http_ex.status_code}")
-        print(f"DEBUG: Tipo de excepción: {type(http_ex)}")
-        print(f"DEBUG: Detalle: {http_ex.detail}")
-        print("DEBUG: Traceback completo:")
-        print(traceback.format_exc())
-        # Re-lanzar HTTPException sin modificar (preservar código de estado)
+    except HTTPException:
+
         raise
     except Exception as e:
-        print(f"DEBUG: Capturando Exception general: {type(e).__name__}")
-        print(traceback.format_exc())
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al crear el conductor: {str(e)}"

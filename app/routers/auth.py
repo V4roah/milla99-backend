@@ -110,9 +110,9 @@ async def verify_code(
             token_type="bearer",
             user=UserRead.model_validate(user, from_attributes=True)
         )
-    except HTTPException as e:
-        # Errores esperados (usuario no encontrado, código inválido, etc.)
-        raise e
+    except HTTPException:
+        # Re-lanzar HTTPException sin modificar (preservar código de estado)
+        raise
     except Exception as e:
         # Loguear el error inesperado
         logging.exception("Unexpected error verifying code")
@@ -137,8 +137,9 @@ async def refresh_token_endpoint(
             access_token=access_token,
             refresh_token=new_refresh_token
         )
-    except HTTPException as e:
-        raise e
+    except HTTPException:
+        # Re-lanzar HTTPException sin modificar (preservar código de estado)
+        raise
     except Exception as e:
         logging.exception("Unexpected error refreshing token")
         raise HTTPException(status_code=500, detail="Internal server error")
