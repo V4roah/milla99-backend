@@ -79,6 +79,13 @@ class DriverService:
                         )
                     ).first()
 
+                    # ✅ NUEVA VALIDACIÓN: Verificar si el usuario está suspendido
+                    if existing_driver_role and existing_driver_role.suspension:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="No se puede crear un conductor para un usuario suspendido. Contacte al administrador para levantar la suspensión."
+                        )
+
                     # Verificar si ya tiene rol CLIENT asignado
                     existing_client_role = session.exec(
                         select(UserHasRole).where(
@@ -415,6 +422,10 @@ class DriverService:
 
                 return response
 
+            except HTTPException:
+                # Re-lanzar HTTPException sin modificar (preservar código de estado)
+                session.rollback()
+                raise
             except Exception as e:
                 session.rollback()
                 print(f"Error en create_driver: {str(e)}")

@@ -603,3 +603,110 @@ def create_and_approve_driver(client, phone_number, country_code):
             print(f"✅ Posición inicial creada para conductor {driver_id}")
 
     return driver_token, driver_id
+
+
+def test_cannot_create_driver_if_user_suspended(client):
+    """
+    Test que verifica que no se puede crear un driver si el usuario ya tiene un rol DRIVER suspendido.
+    """
+    print("\n=== INICIANDO TEST DE SUSPENSIÓN ===")
+
+    # Usar una sesión explícita para el test
+    from app.core.db import engine
+    from sqlmodel import Session
+    from app.models.user_has_roles import UserHasRole, RoleStatus
+    from sqlmodel import select
+    from app.models.user import User
+
+    with Session(engine) as session:
+        try:
+            # 1. Crear un usuario con rol DRIVER suspendido
+            print("1. Creando usuario suspendido...")
+
+            # Crear usuario
+            suspended_user = User(
+                full_name="Usuario Suspendido",
+                country_code="+57",
+                phone_number="3010000005",
+                is_verified_phone=True,
+                is_active=True
+            )
+            session.add(suspended_user)
+            session.commit()
+            session.refresh(suspended_user)
+
+            # Crear rol DRIVER suspendido
+            suspended_driver_role = UserHasRole(
+                id_user=suspended_user.id,
+                id_rol="DRIVER",
+                is_verified=True,
+                status=RoleStatus.APPROVED,
+                suspension=True,  # ✅ SUSPENDIDO
+                verified_at=datetime.now()
+            )
+            session.add(suspended_driver_role)
+            session.commit()
+
+            print(f"Usuario suspendido creado con ID: {suspended_user.id}")
+
+            # 2. Intentar crear un driver con el mismo teléfono
+            print("2. Intentando crear driver con usuario suspendido...")
+
+            user_data = {
+                "full_name": "Driver Test User",
+                "country_code": "+57",
+                "phone_number": "3010000005"  # Mismo teléfono del usuario suspendido
+            }
+            driver_info_data = {
+                "first_name": "Test",
+                "last_name": "Driver",
+                "birth_date": "1990-01-01",
+                "email": "test.driver@example.com"
+            }
+            vehicle_info_data = {
+                "brand": "Test Brand",
+                "model": "Test Model",
+                "model_year": 2020,
+                "color": "Test Color",
+                "plate": "TEST123",
+                "vehicle_type_id": 1
+            }
+            driver_documents_data = {
+                "license_expiration_date": "2025-01-01",
+                "soat_expiration_date": "2025-01-01",
+                "vehicle_technical_inspection_expiration_date": "2025-01-01"
+            }
+
+            # Preparar los datos para la request
+            data = {
+                "user": json.dumps(user_data),
+                "driver_info": json.dumps(driver_info_data),
+                "vehicle_info": json.dumps(vehicle_info_data),
+                "driver_documents": json.dumps(driver_documents_data)
+            }
+
+            # Crear archivos simulados para la request
+            files = {
+                "selfie": ("test_selfie.jpg", b"fake image data", "image/jpeg"),
+                "license_front": ("test_license_front.jpg", b"fake image data", "image/jpeg"),
+                "license_back": ("test_license_back.jpg", b"fake image data", "image/jpeg"),
+                "soat": ("test_soat.pdf", b"fake pdf data", "application/pdf"),
+                "vehicle_technical_inspection": ("test_tech.pdf", b"fake pdf data", "application/pdf")
+            }
+
+            # Intentar crear el driver (debería fallar)
+            create_resp = client.post("/drivers/", data=data, files=files)
+            print(f"Respuesta crear driver: {create_resp.status_code}")
+            print(f"Contenido respuesta: {create_resp.text}")
+
+            # Verificar que falló con el mensaje correcto
+            assert create_resp.status_code == 400  # Ahora debería preservar el 400
+            response_data = create_resp.json()
+            assert "suspendido" in response_data["detail"].lower()
+            assert "administrador" in response_data["detail"].lower()
+
+            print("✅ Validación de suspensión funcionando correctamente")
+
+        except Exception as e:
+            print(f"Error en el test: {str(e)}")
+            raise
