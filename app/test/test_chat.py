@@ -759,3 +759,84 @@ class TestChatSystem:
         assert len(conversation_data) >= 3  # Los 2 originales + el nuevo
         print(
             f"✅ Conversación obtenida durante estado PENDING: {len(conversation_data)} mensajes")
+
+    def test_chat_service_session_consistency(self, client: TestClient):
+        """
+        Test que verifica que el chat service maneja correctamente las sesiones
+        y ve el estado más reciente del ClientRequest.
+        """
+        print(f"\n🧪 INICIANDO TEST: test_chat_service_session_consistency")
+
+        # 1. Crear usuarios y ClientRequest
+        client_user, driver_user = self._create_test_users()
+        client_request = self._create_test_client_request(
+            client_user.id, driver_user.id)
+        client_request_id = client_request.id
+        print(f"✅ ClientRequest creado: {client_request_id}")
+
+        # 2. Autenticar como cliente
+        client_token = self._authenticate_user(
+            client, client_user.phone_number)
+        client_headers = {"Authorization": f"Bearer {client_token}"}
+
+        # 3. Enviar mensaje inicial (debería funcionar)
+        message_data = {
+            "receiver_id": str(driver_user.id),
+            "client_request_id": str(client_request_id),
+            "message": "Mensaje inicial"
+        }
+        response = client.post(
+            "/chat/send", json=message_data, headers=client_headers)
+        assert response.status_code == 201
+        print(f"✅ Mensaje inicial enviado correctamente")
+
+        # 4. Verificar que hay mensajes en la conversación
+        with Session(engine) as session:
+            messages = session.exec(
+                select(ChatMessage).where(
+                    ChatMessage.client_request_id == client_request_id)
+            ).all()
+            assert len(messages) == 1
+            print(f"✅ Mensaje creado en BD: {len(messages)}")
+
+        # 5. Cambiar estado a PAID usando sesión de test
+        with Session(engine) as session:
+            client_request = session.exec(
+                select(ClientRequest).where(
+                    ClientRequest.id == client_request_id)
+            ).first()
+            client_request.status = "PAID"
+            session.add(client_request)
+            session.commit()
+            print(f"✅ Estado cambiado a PAID")
+
+        # 6. Intentar enviar mensaje en estado PAID (debería fallar)
+        message_data = {
+            "receiver_id": str(driver_user.id),
+            "client_request_id": str(client_request_id),
+            "message": "Mensaje en estado PAID"
+        }
+        response = client.post(
+            "/chat/send", json=message_data, headers=client_headers)
+        assert response.status_code == 400
+        assert "No se pueden enviar mensajes en un viaje completado" in response.json()[
+            "detail"]
+        print(f"✅ Mensaje rechazado correctamente en estado PAID")
+
+        # 7. Verificar que los mensajes fueron eliminados automáticamente
+        with Session(engine) as session:
+            remaining_messages = session.exec(
+                select(ChatMessage).where(
+                    ChatMessage.client_request_id == client_request_id)
+            ).all()
+            assert len(remaining_messages) == 0
+            print(
+                f"✅ Mensajes eliminados automáticamente: {len(remaining_messages)}")
+
+        # 8. Verificar que la conversación retorna lista vacía
+        response = client.get(
+            f"/chat/conversation/{client_request_id}", headers=client_headers)
+        assert response.status_code == 200
+        conversation_messages = response.json()
+        assert len(conversation_messages) == 0
+        print(f"✅ Conversación retorna lista vacía en estado PAID")

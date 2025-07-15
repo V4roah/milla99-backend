@@ -14,32 +14,51 @@ def create_chat_message(session: Session, sender_id: UUID, message_data: ChatMes
     """
     Crea un nuevo mensaje de chat y lo guarda en la base de datos.
     Solo permite mensajes si el ClientRequest no está en estado PAID.
+    Usa el mismo patrón del listener para manejar sesiones consistentes.
     """
-    # Verificar que el ClientRequest no esté completado
-    client_request = session.get(ClientRequest, message_data.client_request_id)
-    if not client_request:
-        raise ValueError("Solicitud de viaje no encontrada")
+    # Obtener la conexión actual para crear una sesión fresca
+    connection = session.bind
 
-    if client_request.status == "PAID":
-        raise ValueError("No se pueden enviar mensajes en un viaje completado")
+    # Crear sesión fresca vinculada a la misma conexión (mismo patrón del listener)
+    fresh_session = Session(bind=connection)
 
-    if client_request.status == "CANCELLED":
-        raise ValueError("No se pueden enviar mensajes en un viaje cancelado")
+    try:
+        # Usar sesión fresca para obtener el estado más reciente
+        client_request = fresh_session.get(
+            ClientRequest, message_data.client_request_id)
+        if not client_request:
+            raise ValueError("Solicitud de viaje no encontrada")
 
-    # Crear mensaje sin fecha de expiración (se elimina automáticamente cuando el viaje se completa)
-    chat_message = ChatMessage(
-        sender_id=sender_id,
-        receiver_id=message_data.receiver_id,
-        client_request_id=message_data.client_request_id,
-        message=message_data.message,
-        status=MessageStatus.SENT
-    )
+        if client_request.status == "PAID":
+            # Eliminar mensajes automáticamente usando la misma sesión
+            cleanup_chat_messages_for_request(fresh_session, client_request.id)
+            raise ValueError(
+                "No se pueden enviar mensajes en un viaje completado")
 
-    session.add(chat_message)
-    session.commit()
-    session.refresh(chat_message)
+        if client_request.status == "CANCELLED":
+            raise ValueError(
+                "No se pueden enviar mensajes en un viaje cancelado")
 
-    return chat_message
+        # Crear mensaje usando la sesión fresca
+        chat_message = ChatMessage(
+            sender_id=sender_id,
+            receiver_id=message_data.receiver_id,
+            client_request_id=message_data.client_request_id,
+            message=message_data.message,
+            status=MessageStatus.SENT
+        )
+
+        fresh_session.add(chat_message)
+        fresh_session.commit()
+        fresh_session.refresh(chat_message)
+
+        return chat_message
+
+    except Exception as e:
+        fresh_session.rollback()
+        raise
+    finally:
+        fresh_session.close()
 
 
 def get_conversation_messages(session: Session, client_request_id: UUID, user_id: UUID) -> List[ChatMessage]:
