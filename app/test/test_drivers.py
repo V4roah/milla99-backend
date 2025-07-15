@@ -372,6 +372,8 @@ def test_driver_creation_and_verification_flow(client):
             # 4. Simular verificación de documentos por admin
             print("5. Simulando verificación por admin...")
             driver_role.status = RoleStatus.APPROVED
+            driver_role.is_verified = True
+            driver_role.verified_at = datetime.now()
             session.add(driver_role)
             session.commit()
             session.refresh(driver_role)
@@ -460,16 +462,18 @@ def create_and_approve_driver(client, phone_number, country_code):
                 raise Exception(
                     f"El usuario {phone_number} existe pero no tiene el rol de DRIVER.")
 
-            if driver_role.status != RoleStatus.APPROVED:
-                # Simplemente actualizar el status a APPROVED
+            if driver_role.status != RoleStatus.APPROVED or not driver_role.is_verified:
+                # Actualizar tanto el status como is_verified
                 driver_role.status = RoleStatus.APPROVED
+                driver_role.is_verified = True
+                driver_role.verified_at = datetime.now()
                 session.add(driver_role)
                 session.commit()
                 print(
-                    f"✅ Rol DRIVER actualizado a APPROVED para usuario {driver_id}")
+                    f"✅ Rol DRIVER actualizado a APPROVED y VERIFIED para usuario {driver_id}")
             else:
                 print(
-                    f"✅ Rol DRIVER ya está APPROVED para usuario {driver_id}")
+                    f"✅ Rol DRIVER ya está APPROVED y VERIFIED para usuario {driver_id}")
         else:
             # Si el usuario no existe, lo creamos desde cero
             user_data = {
@@ -527,7 +531,7 @@ def create_and_approve_driver(client, phone_number, country_code):
                     # Verificar si ya existe el rol antes de crear
                     existing_role = session.exec(select(UserHasRole).where(
                         UserHasRole.id_user == driver_id, UserHasRole.id_rol == "DRIVER")).first()
-                    
+
                     if existing_role is None:
                         driver_role = UserHasRole(
                             id_user=driver_id,
@@ -540,7 +544,8 @@ def create_and_approve_driver(client, phone_number, country_code):
                         print("Rol DRIVER creado manualmente")
                     else:
                         driver_role = existing_role
-                        print("Rol DRIVER encontrado después de verificación adicional")
+                        print(
+                            "Rol DRIVER encontrado después de verificación adicional")
                 except Exception as e:
                     print(f"Error creando rol manualmente: {e}")
                     # Si falla, intentar buscar de nuevo (puede que se haya creado en otro proceso)
@@ -554,6 +559,8 @@ def create_and_approve_driver(client, phone_number, country_code):
 
             assert driver_role is not None
             driver_role.status = RoleStatus.APPROVED
+            driver_role.is_verified = True
+            driver_role.verified_at = datetime.now()
             session.add(driver_role)
             session.commit()
 

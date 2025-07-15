@@ -7,6 +7,7 @@ from app.models.driver_cancellation import DriverCancellation
 from app.models.penality_user import PenalityUser, statusEnum
 from app.models.project_settings import ProjectSettings
 from app.models.user import User
+from app.models.verify_mount import VerifyMount
 from sqlalchemy import func, text
 from geoalchemy2.functions import ST_Distance_Sphere
 from datetime import datetime, timedelta, timezone
@@ -282,21 +283,21 @@ def assign_driver_service(session: Session, id: UUID, id_driver_assigned: UUID, 
                 status_code=400,
                 detail="El usuario no tiene el rol de conductor"
             )
-        
+
         if user_role.status != RoleStatus.APPROVED:
             print("DEBUG: No tiene status APPROVED")
             raise HTTPException(
                 status_code=400,
                 detail="El usuario no tiene el rol de conductor aprobado"
             )
-        
+
         if not user_role.is_verified:
             print("DEBUG: No está completamente verificado")
             raise HTTPException(
                 status_code=400,
                 detail="El conductor no está completamente verificado. Faltan documentos por aprobar"
             )
-        
+
         if user_role.suspension:
             print("DEBUG: Está suspendido")
             raise HTTPException(

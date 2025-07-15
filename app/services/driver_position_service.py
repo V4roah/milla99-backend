@@ -23,11 +23,9 @@ class DriverPositionService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
 
         # Validar que el usuario tenga el rol DRIVER aprobado
-        driver_role = self.session.exec(
-            select(UserHasRole).where(
-                UserHasRole.id_user == user_id,
-                UserHasRole.id_rol == "DRIVER"
-            )
+        driver_role = self.session.query(UserHasRole).filter(
+            UserHasRole.id_user == user_id,
+            UserHasRole.id_rol == "DRIVER"
         ).first()
 
         # ✅ CORREGIDO: Validación completa del conductor
