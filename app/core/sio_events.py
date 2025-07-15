@@ -55,6 +55,23 @@ async def change_driver_position(sid, data):
             'lng': data['lng']
         }
     )
+    # NO hay lógica de transición aquí porque es para conductores libres
+
+
+@sio.event
+async def trip_change_driver_position(sid, data):
+    # Si data es string, conviértelo a dict
+    if isinstance(data, str):
+        data = json.loads(data)
+    print(f'El conductor actualizo su posicion en el socket: {sid}: {data}')
+    await sio.emit(
+        f'trip_new_driver_position/{data["id_client"]}',
+        {
+            'id_socket': sid,
+            'lat': data['lat'],
+            'lng': data['lng']
+        }
+    )
 
     # --- INTEGRACIÓN DE LÓGICA DE TRANSICIÓN AUTOMÁTICA ---
     try:
@@ -144,22 +161,6 @@ async def new_driver_assigned(sid, data):
         {
             'id_socket': sid,
             "id_client_request": data["id_client_request"]
-        }
-    )
-
-
-@sio.event
-async def trip_change_driver_position(sid, data):
-    # Si data es string, conviértelo a dict
-    if isinstance(data, str):
-        data = json.loads(data)
-    print(f'El conductor actualizo su posicion en el socket: {sid}: {data}')
-    await sio.emit(
-        f'trip_new_driver_position/{data["id_client"]}',
-        {
-            'id_socket': sid,
-            'lat': data['lat'],
-            'lng': data['lng']
         }
     )
 
