@@ -365,3 +365,164 @@ def test_pending_request_transaction_flow():
         assert company_account.income == expected_company_commission
 
     print("✅ Test completado: Transacciones con precio negociado en solicitudes PENDING")
+
+
+def test_recharge_flow():
+    """
+    Test del flujo completo de recarga:
+    1. Usuario crea recarga
+    2. Admin aprueba la recarga
+    3. Verificar que se actualiza verify_mount
+    """
+    print("\n🔄 Iniciando test de flujo de recarga...")
+
+    # 1. Crear usuario y obtener token
+    print("\n👤 Paso 1: Usando usuario existente y obteniendo token...")
+
+    # Usar un usuario que ya existe en la inicialización
+    phone_number = "3001111111"  # Usar un número que sabemos que existe
+    country_code = "+57"
+
+    # Autenticar usuario existente
+    send_resp = client.post(f"/auth/verify/{country_code}/{phone_number}/send")
+    assert send_resp.status_code == 201
+    code = send_resp.json()["message"].split()[-1]
+
+    verify_resp = client.post(
+        f"/auth/verify/{country_code}/{phone_number}/code",
+        json={"code": code}
+    )
+    assert verify_resp.status_code == 200, f"Error en verificación: {verify_resp.text}"
+
+    token = verify_resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Obtener user_id del token
+    user_info_resp = client.get("/users/me", headers=headers)
+    assert user_info_resp.status_code == 200
+    user_id = user_info_resp.json()["id"]
+
+    print(f"✅ Usuario autenticado: {user_id}")
+
+    # 2. Verificar saldo inicial
+    print("\n💰 Paso 2: Verificando saldo inicial...")
+    balance_resp_before = client.get(
+        "/transactions/balance/me", headers=headers)
+    assert balance_resp_before.status_code == 200
+    balance_data_before = balance_resp_before.json()
+    initial_balance = balance_data_before["mount"]
+    print(f"💰 Saldo inicial: ${initial_balance:,}")
+
+    # 3. Crear recarga
+    print("\n💳 Paso 3: Creando recarga...")
+    recharge_amount = 50000
+    recharge_data = {
+        "amount": recharge_amount,
+        "description": "Recarga de prueba"
+    }
+
+    recharge_resp = client.post(
+        "/transactions/recharge",
+        json=recharge_data,
+        headers=headers
+    )
+    assert recharge_resp.status_code == 201, f"Error creando recarga: {recharge_resp.text}"
+
+    recharge_response = recharge_resp.json()
+    transaction_id = recharge_response["transaction_id"]
+    user_id_from_response = recharge_response["user_id"]
+
+    assert user_id_from_response == user_id
+    assert recharge_response["amount_recharged"] == recharge_amount
+    assert recharge_response["transaction_type"] == "RECHARGE"
+    assert recharge_response["message"] == "Recarga creada exitosamente. Pendiente de aprobación por administrador."
+
+    print(
+        f"✅ Recarga creada: ID {transaction_id}, Monto: ${recharge_amount:,}")
+
+    # 4. Verificar que la transacción está pendiente
+    print("\n⏳ Paso 4: Verificando que la transacción está pendiente...")
+    with Session(engine) as session:
+        transaction = session.exec(
+            select(Transaction).where(Transaction.id == UUID(transaction_id))
+        ).first()
+        assert transaction is not None
+        assert transaction.is_confirmed == False
+        assert transaction.income == recharge_amount
+        assert transaction.type == TransactionType.RECHARGE
+        print(f"✅ Transacción creada como pendiente: {transaction.id}")
+
+    # 5. Verificar saldo ANTES de la aprobación (debería ser el mismo)
+    print("\n💰 Paso 5: Verificando saldo antes de la aprobación...")
+    balance_resp_pending = client.get(
+        "/transactions/balance/me", headers=headers)
+    assert balance_resp_pending.status_code == 200
+    balance_data_pending = balance_resp_pending.json()
+    balance_before_approval = balance_data_pending["mount"]
+    print(f"💰 Saldo antes de aprobación: ${balance_before_approval:,}")
+    assert balance_before_approval == initial_balance, f"El saldo no debería haber cambiado aún. Esperado: ${initial_balance}, Actual: ${balance_before_approval}"
+
+    # 6. Autenticar admin
+    print("\n👨‍💼 Paso 6: Autenticando admin...")
+    admin_login_data = {
+        "email": "admin",
+        "password": "admin"
+    }
+    admin_login_resp = client.post(
+        "/login-admin/login", json=admin_login_data)
+    assert admin_login_resp.status_code == 200, f"Error login admin: {admin_login_resp.text}"
+    admin_token = admin_login_resp.json()["access_token"]
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    print(f"✅ Admin autenticado exitosamente")
+
+    # 7. Admin aprueba la transacción usando el endpoint administrativo
+    print("\n✅ Paso 7: Admin aprueba la transacción...")
+    approval_data = {
+        "transaction_id": transaction_id
+    }
+
+    print(f"   🔄 Aprobando transacción {transaction_id}...")
+    approval_response = client.post(
+        "/admin/transactions/approve",
+        headers=admin_headers,
+        json=approval_data
+    )
+    assert approval_response.status_code == 200, f"Error aprobando transacción: {approval_response.text}"
+
+    approval_result = approval_response.json()
+    assert approval_result["transaction_id"] == transaction_id
+    assert approval_result["amount"] == recharge_amount
+    assert approval_result["transaction_type"] == "RECHARGE"
+    print(f"✅ Transacción aprobada exitosamente: {approval_result['message']}")
+
+    # 8. Verificar que se refleja en verify_mount DESPUÉS de la aprobación
+    print("\n💰 Paso 8: Verificando saldo después de la aprobación...")
+    balance_resp_after = client.get(
+        "/transactions/balance/me", headers=headers)
+    assert balance_resp_after.status_code == 200
+    balance_data_after = balance_resp_after.json()
+    final_balance = balance_data_after["mount"]
+
+    expected_balance = initial_balance + recharge_amount
+    assert final_balance == expected_balance, f"Saldo esperado: ${expected_balance:,}, Saldo actual: ${final_balance:,}"
+
+    print(f"💰 Saldo final: ${final_balance:,}")
+    print(
+        f"✅ Diferencia: ${final_balance - initial_balance:,} (debería ser ${recharge_amount:,})")
+    print(f"✅ Incremento correcto: ${recharge_amount:,}")
+
+    # 9. Verificar que la transacción está confirmada
+    print("\n✅ Paso 9: Verificando que la transacción está confirmada...")
+    with Session(engine) as session:
+        transaction = session.exec(
+            select(Transaction).where(Transaction.id == UUID(transaction_id))
+        ).first()
+        assert transaction.is_confirmed == True
+        print(f"✅ Transacción confirmada en BD: {transaction.id}")
+
+    print("\n🎉 Test completado: Flujo completo de recarga")
+    print(f"📊 Resumen:")
+    print(f"   - Saldo inicial: ${initial_balance:,}")
+    print(f"   - Recarga solicitada: ${recharge_amount:,}")
+    print(f"   - Saldo después de aprobación: ${final_balance:,}")
+    print(f"   - Incremento verificado: ${final_balance - initial_balance:,}")

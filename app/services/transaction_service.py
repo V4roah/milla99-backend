@@ -170,3 +170,122 @@ class TransactionService:
 
     def list_transactions(self, user_id: UUID):
         return self.session.query(Transaction).filter(Transaction.user_id == user_id).order_by(Transaction.date.desc()).all()
+
+    def create_recharge(self, user_id: UUID, amount: int, description: str = "Recarga de saldo"):
+        """
+        Crea una recarga de saldo para el usuario.
+        La transacción se crea como pendiente de aprobación (is_confirmed=False).
+        """
+        from app.models.project_settings import ProjectSettings
+        from app.models.user import User
+        from sqlmodel import select
+
+        # Obtener configuración de monto mínimo
+        project_settings = self.session.exec(
+            select(ProjectSettings).where(ProjectSettings.id == 1)
+        ).first()
+
+        if not project_settings:
+            raise HTTPException(
+                status_code=500,
+                detail="Configuración del proyecto no encontrada"
+            )
+
+        min_amount = project_settings.min_recharge_amount or 10000
+
+        # Validar monto mínimo
+        if amount < min_amount:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El monto mínimo para recargas es ${min_amount:,} pesos"
+            )
+
+        # Verificar que el usuario existe y está activo
+        user = self.session.get(User, user_id)
+        if not user:
+            raise HTTPException(
+                status_code=404,
+                detail="Usuario no encontrado"
+            )
+
+        if not user.is_active:
+            raise HTTPException(
+                status_code=400,
+                detail="Usuario inactivo"
+            )
+
+        # Crear transacción RECHARGE (pendiente de aprobación)
+        transaction = Transaction(
+            user_id=user_id,
+            income=amount,
+            expense=0,
+            type=TransactionType.RECHARGE,
+            description=description,
+            is_confirmed=False  # Requiere aprobación de admin
+        )
+
+        # Guardar transacción
+        self.session.add(transaction)
+        self.session.commit()
+        self.session.refresh(transaction)
+
+        return {
+            "message": "Recarga creada exitosamente. Pendiente de aprobación por administrador.",
+            "transaction_id": transaction.id,
+            "user_id": user_id,
+            "amount_recharged": amount,
+            "transaction_type": TransactionType.RECHARGE,
+            "created_at": transaction.date
+        }
+
+    def confirm_transaction(self, transaction_id: UUID):
+        """
+        Confirma una transacción y actualiza el verify_mount del usuario.
+        """
+        transaction = self.session.exec(
+            select(Transaction).where(Transaction.id == transaction_id)
+        ).first()
+
+        if not transaction:
+            raise HTTPException(
+                status_code=404,
+                detail="Transacción no encontrada"
+            )
+
+        if transaction.is_confirmed:
+            raise HTTPException(
+                status_code=400,
+                detail="La transacción ya está confirmada"
+            )
+
+        # Confirmar la transacción
+        transaction.is_confirmed = True
+        self.session.add(transaction)
+
+        # Actualizar verify_mount según el tipo de transacción
+        verify_mount = self.session.query(VerifyMount).filter(
+            VerifyMount.user_id == transaction.user_id
+        ).first()
+
+        if transaction.type == TransactionType.RECHARGE:
+            if transaction.income > 0:
+                if verify_mount:
+                    verify_mount.mount += transaction.income
+                else:
+                    verify_mount = VerifyMount(
+                        user_id=transaction.user_id,
+                        mount=transaction.income
+                    )
+                    self.session.add(verify_mount)
+                check_and_notify_low_balance(
+                    self.session, transaction.user_id, verify_mount.mount)
+
+        self.session.commit()
+
+        return {
+            "message": "Transacción confirmada exitosamente",
+            "transaction_id": transaction.id,
+            "user_id": transaction.user_id,
+            "amount": transaction.income if transaction.income > 0 else transaction.expense,
+            "type": transaction.type
+        }

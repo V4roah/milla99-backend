@@ -31,6 +31,8 @@ class ProjectSettingsBase(SQLModel):
     max_distance_for_busy_driver: Optional[float] = Field(default=2.0)
     max_transit_time_for_busy_driver: Optional[float] = Field(
         default=5.0)  # Tiempo máximo de tránsito en minutos
+    min_recharge_amount: Optional[int] = Field(
+        default=10000)  # Monto mínimo para recargas
 
 
 class ProjectSettings(ProjectSettingsBase, table=True):
@@ -67,3 +69,4 @@ class ProjectSettingsUpdate(SQLModel):
     max_wait_time_for_busy_driver: Optional[float] = None
     max_distance_for_busy_driver: Optional[float] = None
     max_transit_time_for_busy_driver: Optional[float] = None
+    min_recharge_amount: Optional[int] = None

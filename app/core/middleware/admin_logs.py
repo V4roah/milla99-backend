@@ -166,6 +166,8 @@ class AdminLogMiddleware(BaseHTTPMiddleware):
         endpoints_with_decorators = [
             # Retiros (tienen decorador específico)
             "/admin/withdrawals/{withdrawal_id}/update-status",
+            # Transacciones (tienen decorador específico)
+            "/admin/transactions/approve",
         ]
 
         # Verificar si el path coincide con algún endpoint que tiene decorador

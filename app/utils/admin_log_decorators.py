@@ -511,6 +511,66 @@ def log_user_activation():
     return decorator
 
 
+def log_transaction_approval():
+    """
+    Decorador para aprobación de transacciones con detalles específicos
+    """
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        async def wrapper(
+            *args,
+            request: Request,
+            session: SessionDep,
+            current_admin=Depends(get_current_admin_user),
+            **kwargs
+        ):
+            # Ejecutar la función original
+            result = await func(*args, request=request, session=session, current_admin=current_admin, **kwargs)
+
+            try:
+                # Importar el servicio aquí para evitar circular imports
+                from app.services.admin_log_service import AdminLogService
+
+                # Extraer detalles específicos de la función
+                transaction_id = kwargs.get(
+                    'transaction_id') or kwargs.get('id')
+                amount = kwargs.get('amount')
+                transaction_type = kwargs.get(
+                    'transaction_type', 'No especificado')
+
+                # Capturar datos de la request
+                ip_address = request.client.host if request.client else None
+                user_agent = request.headers.get("user-agent")
+
+                # Crear descripción detallada
+                description = f"Transacción aprobada - ID: {transaction_id}, Tipo: {transaction_type}"
+                if amount:
+                    description += f", Monto: ${amount:,}"
+
+                # Crear el log específico
+                service = AdminLogService(session)
+                service.log_admin_action(
+                    admin_id=current_admin.id,
+                    action_type=AdminActionType.TRANSACTION_APPROVED,
+                    resource_type="transaction",
+                    resource_id=str(
+                        transaction_id) if transaction_id else None,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    description=description,
+                    severity=LogSeverity.CRITICAL
+                )
+
+            except Exception as e:
+                # No fallar la función principal si el logging falla
+                print(f"Error al loggear aprobación de transacción: {str(e)}")
+
+            return result
+
+        return wrapper
+    return decorator
+
+
 # ============================================================================
 # DECORADORES DE UTILIDAD
 # ============================================================================

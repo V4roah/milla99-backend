@@ -1,10 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-
 from fastapi.staticfiles import StaticFiles
 
-from app.routers import config_service_value_admin, project_settings
+# Imports de routers
+from app.routers import users, auth, drivers, client_request, trip_stops, driver_position, config_service_value, driver_trip_offer, withdrawal, driver_savings, referrals, user_fcm_token, chat, login_admin, verify_docs, config_service_value_admin, withdrawal_admin, project_settings, admin_statistics, admin_drivers, transaction_admin
 from app.routers.transaction import router as transaction_router
 from app.routers.bank_accounts import router as bank_accounts_router
 from app.routers.bank import router as bank_router
@@ -13,7 +13,6 @@ from app.routers.metrics import router as metrics_router
 from app.routers.admin_logs import router as admin_logs_router
 
 from .core.db import create_all_tables, get_environment_info
-from .routers import config_service_value, referrals, users, drivers, auth, verify_docs, driver_position, driver_trip_offer, client_request, login_admin, withdrawal, driver_savings, withdrawal_admin, admin_statistics, admin_drivers, user_fcm_token, chat, trip_stops
 from .core.config import settings
 from .core.init_data import init_data
 from .core.middleware.auth import JWTAuthMiddleware
@@ -94,6 +93,7 @@ fastapi_app.include_router(withdrawal_admin.router)
 fastapi_app.include_router(project_settings.router)
 fastapi_app.include_router(admin_statistics.router)
 fastapi_app.include_router(admin_drivers.router)
+fastapi_app.include_router(transaction_admin.router)
 fastapi_app.include_router(test_runner_router)
 fastapi_app.include_router(metrics_router)
 fastapi_app.include_router(admin_logs_router)

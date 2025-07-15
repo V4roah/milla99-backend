@@ -40,6 +40,24 @@ class TransactionResponse(BaseModel):
         None, description="Descripción de la transacción")
 
 
+# Modelos para recarga
+class RechargeRequest(BaseModel):
+    amount: int = Field(..., gt=0, description="Monto a recargar (en pesos)")
+    description: Optional[str] = Field(
+        "Recarga de saldo", description="Descripción opcional")
+
+
+class RechargeResponse(BaseModel):
+    message: str = Field(..., description="Mensaje de confirmación")
+    transaction_id: UUID = Field(...,
+                                 description="ID de la transacción creada")
+    user_id: UUID = Field(...,
+                          description="ID del usuario que solicitó la recarga")
+    amount_recharged: int = Field(..., description="Monto recargado")
+    transaction_type: str = Field(..., description="Tipo de transacción")
+    created_at: datetime = Field(..., description="Fecha y hora de creación")
+
+
 @router.get(
     "/balance/me",
     response_model=BalanceResponse,
@@ -200,3 +218,89 @@ def list_my_transactions(
     user_id = request.state.user_id
     service = TransactionService(session)
     return service.list_transactions(user_id)
+
+
+@router.post(
+    "/recharge",
+    response_model=RechargeResponse,
+    status_code=status.HTTP_201_CREATED,
+    description="""
+    Crea una recarga de saldo para el usuario autenticado.
+    
+    Permite a usuarios (clientes y conductores) recargar su saldo en la plataforma.
+    La recarga se crea como pendiente de aprobación por un administrador.
+    
+    **Parámetros:**
+    - `amount`: Monto a recargar (debe ser mayor al mínimo configurado)
+    - `description`: Descripción opcional de la recarga
+    
+    **Respuesta:**
+    Devuelve información de la recarga creada, incluyendo ID de transacción y monto.
+    """,
+    responses={
+        201: {
+            "description": "Recarga creada exitosamente",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Recarga creada exitosamente. Pendiente de aprobación por administrador.",
+                        "transaction_id": "550e8400-e29b-41d4-a716-446655440000",
+                        "user_id": "550e8400-e29b-41d4-a716-446655440001",
+                        "amount_recharged": 50000,
+                        "transaction_type": "RECHARGE",
+                        "created_at": "2025-01-15T14:30:00"
+                    }
+                }
+            }
+        },
+        400: {
+            "description": "Monto inválido o insuficiente",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "El monto mínimo para recargas es 10,000 pesos"
+                    }
+                }
+            }
+        },
+        401: {
+            "description": "No autorizado - Token inválido o expirado",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Could not validate credentials"
+                    }
+                }
+            }
+        },
+        403: {
+            "description": "Prohibido - Token no proporcionado",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Not authenticated"
+                    }
+                }
+            }
+        }
+    }
+)
+def create_recharge(
+    request: Request,
+    recharge_data: RechargeRequest,
+    session: SessionDep,
+    credentials: HTTPAuthorizationCredentials = Security(bearer_scheme)
+):
+    """
+    Crea una recarga de saldo para el usuario autenticado.
+    """
+    user_id = request.state.user_id
+    service = TransactionService(session)
+
+    result = service.create_recharge(
+        user_id=user_id,
+        amount=recharge_data.amount,
+        description=recharge_data.description
+    )
+
+    return RechargeResponse(**result)
