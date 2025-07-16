@@ -61,7 +61,8 @@ locust==2.24.0
 MarkupSafe==3.0.2
 msgpack==1.1.1
 multidict==6.4.3
-mysql-connector-python==9.3.0
+#mysql-connector-python==9.3.0
+psycopg2-binary
 numpy==2.2.5
 packaging==25.0
 passlib==1.7.4
@@ -92,7 +93,7 @@ python-jose[cryptography]==3.3.0
 python-multipart==0.0.20
 python-socketio==5.13.0
 pytz==2025.2
-pywin32==310
+#pywin32
 pyzmq==27.0.0
 redis==6.1.0
 requests==2.32.3
