@@ -9,7 +9,7 @@ from app.models.project_settings import ProjectSettings
 from app.models.user import User
 from app.models.verify_mount import VerifyMount
 from sqlalchemy import func, text
-from geoalchemy2.functions import ST_Distance_Sphere
+from geoalchemy2.functions import ST_Distance
 from datetime import datetime, timedelta, timezone
 import requests
 from fastapi import HTTPException, status
@@ -129,13 +129,11 @@ async def get_nearby_client_requests_service(driver_lat, driver_lng, session: Se
             User.country_code,
             User.phone_number,
             TypeService.name.label("type_service_name"),
-            ST_Distance_Sphere(ClientRequest.pickup_position,
-                               driver_point).label("distance"),
-            func.timestampdiff(
-                text('MINUTE'),
-                ClientRequest.created_at,
-                func.now()  # Hora local del servidor MySQL
-            ).label("time_difference")
+            # ✅ CORREGIDO: Usar ST_Distance para PostgreSQL en lugar de ST_Distance_Sphere de MySQL
+            ST_Distance(ClientRequest.pickup_position,
+                        driver_point).label("distance"),
+            # ✅ CORREGIDO: Usar EXTRACT para PostgreSQL en lugar de timestampdiff de MySQL
+            (func.extract('epoch', func.now() - ClientRequest.created_at) / 60.0).label("time_difference")
         )
         .join(User, User.id == ClientRequest.id_client)
         .join(TypeService, TypeService.id == ClientRequest.type_service_id)
@@ -928,8 +926,8 @@ def get_nearby_drivers_service(
                 DriverInfo,
                 VehicleInfo,
                 DriverPosition,
-                ST_Distance_Sphere(DriverPosition.position,
-                                   client_point).label("distance")
+                ST_Distance(DriverPosition.position,
+                            client_point).label("distance")
             )
             .join(UserHasRole, UserHasRole.id_user == User.id)
             .join(DriverInfo, DriverInfo.user_id == User.id)
@@ -1942,8 +1940,8 @@ def find_available_drivers(
             DriverInfo,
             VehicleInfo,
             DriverPosition,
-            ST_Distance_Sphere(DriverPosition.position,
-                               client_point).label("distance")
+            ST_Distance(DriverPosition.position,
+                        client_point).label("distance")
         )
         .join(UserHasRole, User.id == UserHasRole.id_user)
         .join(DriverInfo, User.id == DriverInfo.user_id)
@@ -2015,8 +2013,8 @@ def find_busy_drivers(
             VehicleInfo,
             ClientRequest,
             DriverPosition,
-            ST_Distance_Sphere(DriverPosition.position,
-                               client_point).label("distance")
+            ST_Distance(DriverPosition.position,
+                        client_point).label("distance")
         )
         .join(UserHasRole, User.id == UserHasRole.id_user)
         .join(DriverInfo, User.id == DriverInfo.user_id)
@@ -2282,7 +2280,7 @@ def assign_busy_driver(session, client_request_id, driver_id, estimated_pickup_t
             f'POINT({driver_lng} {driver_lat})', 4326)
 
         distance_result = session.query(
-            func.ST_Distance_Sphere(vehicle_point, client_point)
+            func.ST_Distance(vehicle_point, client_point)
         ).scalar()
 
         distance_km = distance_result / 1000  # Convertir a km
