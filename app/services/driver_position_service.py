@@ -45,12 +45,15 @@ class DriverPositionService:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                                 detail="El conductor está suspendido y no puede operar")
 
-        # Verifica si ya existe una posición para este driver
-        existing = self.session.get(DriverPosition, user_id)
         point = from_shape(Point(data.lng, data.lat), srid=4326)
+
+        # Verificar si ya existe una posición para este conductor
+        existing = self.session.query(DriverPosition).filter(
+            DriverPosition.id_driver == user_id
+        ).first()
+
         if existing:
             existing.position = point
-            self.session.add(existing)
             self.session.commit()
             self.session.refresh(existing)
             return existing
@@ -72,11 +75,13 @@ class DriverPositionService:
                 DriverPosition.id_driver,
                 func.ST_X(DriverPosition.position).label("lng"),
                 func.ST_Y(DriverPosition.position).label("lat"),
-                (func.ST_Distance_Sphere(DriverPosition.position,
+                # ✅ CORREGIDO: Usar ST_Distance para PostgreSQL en lugar de ST_Distance_Sphere de MySQL
+                (func.ST_Distance(DriverPosition.position,
                  driver_point) / 1000).label("distance_km")
             )
             .filter(
-                func.ST_Distance_Sphere(
+                # ✅ CORREGIDO: Usar ST_Distance para PostgreSQL
+                func.ST_Distance(
                     DriverPosition.position, driver_point) <= max_distance_m
             )
             .order_by("distance_km")
