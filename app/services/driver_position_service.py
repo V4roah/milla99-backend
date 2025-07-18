@@ -55,7 +55,6 @@ class DriverPositionService:
         if existing:
             existing.position = point
             self.session.commit()
-            self.session.refresh(existing)
             return existing
 
         driver_position = DriverPosition(
