@@ -1468,6 +1468,12 @@ def driver_canceled_service(session: Session, id_client_request: UUID, user_id: 
     record_driver_cancellation(session, user_id, id_client_request)
     session.commit()  # Hacer commit para que esté disponible para el conteo
 
+        # ✅ CAMBIAR ESTADO A CANCELLED ANTES de los return statements
+    if client_request.status in [StatusEnum.ACCEPTED, StatusEnum.ON_THE_WAY, StatusEnum.ARRIVED]:
+        client_request.status = StatusEnum.CANCELLED
+        client_request.updated_at = datetime.utcnow()
+        session.commit()
+
     # Solo verificar límites y aplicar suspensión si está en ACCEPTED u ON_THE_WAY
     if client_request.status in [StatusEnum.ACCEPTED, StatusEnum.ON_THE_WAY]:
         # Eliminar cancelaciones antiguas y obtener conteos actuales
@@ -1525,11 +1531,7 @@ def driver_canceled_service(session: Session, id_client_request: UUID, user_id: 
                 "daily_cancellation_count": cancel_day_count,
                 "weekly_cancellation_count": cancel_week_count
             }
-    else:  # Estado ARRIVED
-        # Actualizar estado a CANCELLED
-        client_request.status = StatusEnum.CANCELLED
-        client_request.updated_at = datetime.utcnow()
-        session.commit()
+    else:
 
         # Enviar notificación al cliente sobre la cancelación
         try:
@@ -1549,11 +1551,6 @@ def driver_canceled_service(session: Session, id_client_request: UUID, user_id: 
             "message": "Solicitud de viaje cancelada exitosamente por el conductor."
         }
 
-    # Después de registrar la cancelación y antes de retornar, actualizar el estado a CANCELLED para todos los casos permitidos
-    if client_request.status in [StatusEnum.ACCEPTED, StatusEnum.ON_THE_WAY, StatusEnum.ARRIVED]:
-        client_request.status = StatusEnum.CANCELLED
-        client_request.updated_at = datetime.utcnow()
-        session.commit()
 
 
 def record_driver_cancellation(session: Session, driver_id: UUID, client_request_id: UUID):
