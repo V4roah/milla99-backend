@@ -152,7 +152,7 @@ async def get_nearby_client_requests_service(driver_lat, driver_lng, session: Se
 
     print(f"[DEBUG] Query SQL: {str(base_query)}")
 
-    base_query = base_query.having(text(f"distance < {distance_limit}"))
+    base_query = base_query.having(ST_Distance(ClientRequest.pickup_position, driver_point) < distance_limit)
     results = []
     query_results = base_query.all()
 
